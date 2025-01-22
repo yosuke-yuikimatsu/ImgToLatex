@@ -1,179 +1,172 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from cnn import CNN
-from lstm import StackedLSTM
-from attention import BahdanauAttention
+from row_encoder import RowEncoder
+from decoder import Decoder
 from output_projector import OutputProjector
 from criterion import create_criterion
 
-class OCRModel(nn.Module):
+class FullOCRModel(nn.Module):
     """
-    Примерная «склейка» всех модулей в единое целое,
+    Модель, повторяющая архитектуру:
+      - CNN
+      - biLSTM (fw/bw) построчно + positional embeddings
+      - Decoder LSTM c input-feeding + Attention
+      - Output projector
+      - Criterion (NLL)
     """
-    def __init__(self, config):
-        super(OCRModel, self).__init__()
-        # Параметры из config
-        self.encoder_num_hidden = config["encoder_num_hidden"]
-        self.encoder_num_layers = config["encoder_num_layers"]
-        self.decoder_num_hidden = config["decoder_num_hidden"]
-        self.decoder_num_layers = config["decoder_num_layers"]
-        self.target_vocab_size = config["target_vocab_size"]
-        self.target_embedding_size = config["target_embedding_size"]
-        self.dropout = config.get("dropout", 0.0)
-        self.ignore_index = config.get("ignore_index", 1)
+    def __init__(self,
+                 vocab_size,             # размер словаря
+                 cnn_feature_size=512,   # выходное кол-во каналов CNN
+                 encoder_num_hidden=256,
+                 encoder_num_layers=1,
+                 max_encoder_l_h=32,     # макс. кол-во строк
+                 decoder_num_hidden=512,
+                 decoder_num_layers=1,
+                 target_embedding_size=256,
+                 dropout=0.0,
+                 input_feed=True,
+                 pad_idx=1):
+        super(FullOCRModel, self).__init__()
 
-        # 1) CNN (из cnn.py)
+        self.vocab_size = vocab_size
+        self.encoder_num_hidden = encoder_num_hidden
+        self.decoder_num_hidden = decoder_num_hidden
+        self.decoder_num_layers = decoder_num_layers
+        self.target_embedding_size = target_embedding_size
+        self.dropout = dropout
+        self.input_feed = input_feed
+        self.pad_idx = pad_idx
+
+        # 1) CNN
         self.cnn = CNN()
 
-        # 2) "Row Encoder" LSTM: вход = 512 (число каналов на выходе из CNN),
-        #    скрытое = encoder_num_hidden
-        self.encoder = StackedLSTM(
-            input_size=512,
-            hidden_size=self.encoder_num_hidden,
-            num_layers=self.encoder_num_layers,
-            dropout=self.dropout
+        # 2) RowEncoder (biLSTM + pos embeddings)
+        self.row_encoder = RowEncoder(
+            cnn_feature_size=cnn_feature_size,
+            hidden_size=encoder_num_hidden,
+            num_layers=encoder_num_layers,
+            max_h=max_encoder_l_h,
+            dropout=dropout
         )
 
-        # 3) Внимание. Если хотим biLSTM, надо завести 2 энкодера,
-        #    но для упрощения будем считать, что один.
-        self.attention = BahdanauAttention(self.decoder_num_hidden)
-
-        # 4) Decoder
-        #   а) Встроим Embedding для target-символов
-        self.embedding = nn.Embedding(self.target_vocab_size, self.target_embedding_size)
-        #   б) Decoder LSTM, куда на вход подаётся concat(Emb, контекст).
-        #   Но можно и через «input_feed», как в Lua.  
-        self.decoder_rnn = StackedLSTM(
-            input_size=self.target_embedding_size + self.encoder_num_hidden,
-            hidden_size=self.decoder_num_hidden,
-            num_layers=self.decoder_num_layers,
-            dropout=self.dropout
+        # 3) Decoder (LSTM + attention + input_feed)
+        self.decoder = Decoder(
+            vocab_size=vocab_size,
+            embed_size=target_embedding_size,
+            hidden_size=decoder_num_hidden,
+            num_layers=decoder_num_layers,
+            dropout=dropout,
+            input_feed=input_feed,
+            pad_idx=pad_idx
         )
 
-        # 5) Выходной проектор
-        self.output_projector = OutputProjector(self.decoder_num_hidden, self.target_vocab_size)
+        # 4) OutputProjector
+        #   На выход декодера мы делаем concat(top_h, current_context), это 2*decoder_num_hidden
+        #   Можно сделать доп. линейный слой → hidden_size, как в Lua, но тут напрямую:
+        self.output_projector = OutputProjector(decoder_num_hidden*2, vocab_size)
 
-        # 6) Критерий (NLLLoss)
-        self.criterion = create_criterion(self.target_vocab_size, ignore_index=self.ignore_index)
-
+        # 5) Criterion
+        self.criterion = create_criterion(vocab_size, ignore_index=pad_idx)
 
     def forward(self, images, targets=None):
         """
         images: (batch, 1, H, W)
-        targets: (batch, tgt_len) (опционально, если тренируем)
+        targets: (batch, T) (опционально)
+          Если targets=None, работает в режиме инференса (greedy).
+          Иначе считает loss.
         """
-        batch_size = images.size(0)
+        B = images.size(0)
 
-        # ---------------------
-        # 1) Прогон через CNN
-        # ---------------------
-        # features.shape = (batch, H', W', 512)
-        features = self.cnn(images)
+        # === (1) CNN -> feature map ===
+        feats = self.cnn(images)  # (B, H', W', 512)
 
-        # Допустим, считаем H' это "кол-во строк",
-        # а W' - "кол-во колонок". "Row encoder" будет идти по W'.
-        b, Hp, Wp, C = features.shape
+        # === (2) biLSTM over rows ===
+        #     Возвращаем context: (B, H'*W', 2*enc_hidden)
+        context = self.row_encoder(feats)  # shape: (B, seq_len, 2*enc_hidden)
 
-        # Сольём высоту (Hp) внутрь batch – чтобы для каждого "row" запустить LSTM
-        # Но в оригинале (model.lua) была чуть иная логика.  
-        # Здесь просто иллюстрация:
-        # (batch * Hp, Wp, C) → (Wp, batch*Hp, C)
-        row_enc_input = features.view(b*Hp, Wp, C).permute(1, 0, 2).contiguous()
+        # Для внимания удобно context сделать: (B, seq_len, dec_hidden)?
+        # Но если encoder_num_hidden != decoder_num_hidden, можно
+        # подогнать через линейный слой. Предположим, что dec_hidden = 2*enc_hidden.
+        # Если нет, добавьте self.enc2dec = nn.Linear(2*enc_hidden, decoder_num_hidden).
+        # context_dec = self.enc2dec(context) # (B, seq_len, dec_hidden)
+        # А здесь для простоты допустим: decoder_num_hidden == 2*encoder_num_hidden
+        seq_len = context.size(1)
 
-        # ---------------------
-        # 2) Encoder LSTM
-        # ---------------------
-        # Получаем (seq_len=Wp, batch*Hp, hidden)
-        encoder_outputs, encoder_hidden = self.encoder(row_enc_input)
+        # === Если нет targets => инференс (greedy) ===
+        if targets is None:
+            max_len = 100
+            preds = []
 
-        # encoder_outputs обратно: (batch*Hp, Wp, hidden)
-        encoder_outputs = encoder_outputs.permute(1, 0, 2)
-
-        # При желании можно «разбить» обратно на (batch, Hp, Wp, hidden)
-        # но тут оставим как есть.
-
-        # ---------------------
-        # 3) Если идёт тренировка (targets != None),
-        #    делаем Teacher Forcing
-        # ---------------------
-        if targets is not None:
-            # targets.shape = (batch, tgt_len)
-            tgt_len = targets.size(1)
-
-            # Инициализация decoder state нулями (упрощённо)
+            # Инициализируем decoder hidden нулями
+            # decoder.num_layers
             dec_hidden = []
             for _ in range(self.decoder_num_layers):
-                h = torch.zeros(batch_size, self.decoder_num_hidden, device=images.device)
-                c = torch.zeros(batch_size, self.decoder_num_hidden, device=images.device)
-                dec_hidden.append((h, c))
+                h = torch.zeros(B, self.decoder_num_hidden, device=images.device)
+                c = torch.zeros(B, self.decoder_num_hidden, device=images.device)
+                dec_hidden.append((h,c))
 
-            # Запоминаем логи потерь
-            loss = 0.0
+            # prev_context для input_feed
+            prev_context = torch.zeros(B, self.decoder_num_hidden, device=images.device)
 
-            for t in range(tgt_len):
-                # 1) Вытаскиваем очередной токен: (batch,)
-                token_t = targets[:, t]
+            # Начнём с <sos> = 2 (пример)
+            y_t = torch.full((B,), 2, dtype=torch.long, device=images.device)
 
-                # 2) Embedding: (batch, embed_dim)
-                emb_t = self.embedding(token_t)
+            for t in range(max_len):
+                dec_hidden, cur_context, combined = self.decoder(
+                    y_prev=y_t,
+                    prev_hidden=dec_hidden,
+                    prev_context=prev_context,
+                    context=context
+                )
+                # получаем лог-вероятности
+                log_probs = self.output_projector(combined)  # (B, vocab_size)
+                # берём argmax
+                y_t = log_probs.argmax(dim=1)  # (B,)
 
-                # 3) Допустим, берём «суммарный» контекст через среднее и внимание:
-                #    или как вариант, берём просто последний энкодер hidden
-                #    В оригинале – своя логика внимания по encoder_outputs.
-                #    Пример (возьмём h первого слоя decoder):
-                h_dec = dec_hidden[-1][0]  # скрытый state верхнего слоя decoder
-                context_t, attn_weights = self.attention(h_dec,  # (batch, dec_hidden)
-                                                         # Превратим encoder_outputs в (batch, seq_len, hidden)
-                                                         encoder_outputs.view(b*Hp, Wp, -1))
+                preds.append(y_t)
+                prev_context = cur_context
 
-                # 4) Собираем input для Decoder LSTM
-                dec_input = torch.cat([emb_t, context_t], dim=1)  # (batch, embed_dim + hidden)
-                dec_input = dec_input.unsqueeze(0)  # сделаем (1, batch, ...), т.к. StackedLSTM ждёт seq_len первым
-
-                # 5) Прогоняем через decoder_rnn
-                dec_out, dec_hidden = self.decoder_rnn(dec_input, dec_hidden)
-                # dec_out.shape = (1, batch, dec_hidden_size)
-                dec_out = dec_out.squeeze(0)  # (batch, dec_hidden_size)
-
-                # 6) выходной слой (лог-вероятности)
-                log_probs = self.output_projector(dec_out)  # (batch, vocab_size)
-
-                # 7) Считаем loss
-                loss_t = self.criterion(log_probs, token_t)
-                loss += loss_t
-
-            return loss / batch_size  # усредним или вернём сумму
+            preds = torch.stack(preds, dim=1)
+            return preds  # (B, max_len)
 
         else:
-            # Режим инференса (greedy/beam search)
-            # Здесь пример "жадного" шага, когда мы не знаем targets.
-            # TODO: реализовать beam search при необходимости.
-            max_length = 100
-            generated = []
+            # === Train mode: Teacher forcing по всем шагам targets. ===
+            batch_loss = 0.0
+            T = targets.size(1)
+
+            # Decoder hidden init нулями
             dec_hidden = []
             for _ in range(self.decoder_num_layers):
-                h = torch.zeros(batch_size, self.decoder_num_hidden, device=images.device)
-                c = torch.zeros(batch_size, self.decoder_num_hidden, device=images.device)
-                dec_hidden.append((h, c))
+                h = torch.zeros(B, self.decoder_num_hidden, device=images.device)
+                c = torch.zeros(B, self.decoder_num_hidden, device=images.device)
+                dec_hidden.append((h,c))
+            prev_context = torch.zeros(B, self.decoder_num_hidden, device=images.device)
 
-            # Начнём с символа <sos>=2, например
-            inp_token = torch.zeros(batch_size, dtype=torch.long, device=images.device).fill_(2)
+            # Проходим по каждому шагу в target
+            for t in range(T):
+                # y_{t-1}, но в Lua-коде "targets[t]" часто это "текущий"?
+                # Допустим, берем targets[:, t] как вход.
+                y_inp = targets[:, t]
 
-            for t in range(max_length):
-                emb_t = self.embedding(inp_token)
-                h_dec = dec_hidden[-1][0]
-                context_t, _ = self.attention(h_dec, encoder_outputs.view(b*Hp, Wp, -1))
-                dec_input = torch.cat([emb_t, context_t], dim=1).unsqueeze(0)
-                dec_out, dec_hidden = self.decoder_rnn(dec_input, dec_hidden)
-                dec_out = dec_out.squeeze(0)
-                log_probs = self.output_projector(dec_out)
-                # Берём argmax
-                next_token = log_probs.argmax(dim=1)
-                generated.append(next_token)
-                inp_token = next_token
+                dec_hidden, cur_context, combined = self.decoder(
+                    y_prev=y_inp,
+                    prev_hidden=dec_hidden,
+                    prev_context=prev_context,
+                    context=context
+                )
+                # Вычисляем лог-вероятности
+                log_probs = self.output_projector(combined)  # (B, vocab_size)
 
-            # Склеим выход по шагам
-            generated = torch.stack(generated, dim=1)  # (batch, max_length)
-            return generated
+                # Считаем loss
+                # На timestep t, целевой токен - это targets[:, t].
+                # (B,)
+                loss_t = self.criterion(log_probs, y_inp)
+                batch_loss += loss_t
+
+                prev_context = cur_context
+
+            # Усредним по batch'у (как в Lua), можно ещё разделить на (B*T), зависит от желания
+            avg_loss = batch_loss / B
+            return avg_loss

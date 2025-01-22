@@ -4,8 +4,8 @@ import torch.nn.functional as F
 
 class OutputProjector(nn.Module):
     """
-    Аналог createOutputUnit из output_projector.lua:
-    просто линейный слой + LogSoftMax.
+    Аналог createOutputUnit:
+      - Linear(input_size, output_size) + LogSoftMax
     """
     def __init__(self, input_size, output_size):
         super(OutputProjector, self).__init__()
@@ -13,6 +13,6 @@ class OutputProjector(nn.Module):
         self.log_softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
-        x = self.linear(x)
-        x = self.log_softmax(x)
+        x = self.linear(x)         # (batch, output_size)
+        x = self.log_softmax(x)    # (batch, output_size)
         return x

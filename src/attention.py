@@ -2,41 +2,45 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class BahdanauAttention(nn.Module):
+class DecoderAttention(nn.Module):
     """
-    Аналог a(·) из оригинала: вычисление et и softmax.
-    Но чуть упрощён, без отдельного "input_feed" внутри.
+    Аналог create_decoder_attn. В Lua-коде:
+      et = W_h * h_{t-1} + W_v * v + ... => softmax => контекст
+    Упрощённо используем схему "Luong attention" или "Bahdanau".
     """
     def __init__(self, hidden_size):
-        super(BahdanauAttention, self).__init__()
-        # W_h, W_s и v^T из Bahdanau
-        self.W_h = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.W_s = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.v = nn.Linear(hidden_size, 1, bias=False)
+        super(DecoderAttention, self).__init__()
+        # Приблизимся к "Luong general"
+        self.W = nn.Linear(hidden_size, hidden_size, bias=False)
 
-    def forward(self, decoder_state, encoder_outputs):
+    def forward(self, decoder_state, context):
         """
-        decoder_state: (batch, hidden_size) – h_t
-        encoder_outputs: (batch, seq_len, hidden_size)
-                        – набор "аннотаций" из энкодера
-        Возвращает:
-          context_vector: (batch, hidden_size),
-          attn_weights: (batch, seq_len)
+        decoder_state: (batch, hidden_dim)
+        context: (batch, source_len, hidden_dim)  -- это H'*W' позиций
+        Возвращаем:
+         - контекстный вектор (batch, hidden_dim)
+         - веса внимания (batch, source_len)
         """
-        batch_size, seq_len, _ = encoder_outputs.size()
+        # 1) матриц-множим context на decoder_state
+        # 2) softmax
+        # 3) контекст = sum( alpha_i * context_i )
 
-        # Расширяем decoder_state до (batch, seq_len, hidden_size)
-        decoder_state_expanded = decoder_state.unsqueeze(1).expand(-1, seq_len, -1)
+        # (batch, hidden_dim) -> (batch, 1, hidden_dim)
+        dec_state_exp = decoder_state.unsqueeze(1)
+        # W * dec_state
+        dec_proj = self.W(dec_state_exp)  # (batch,1,hidden_dim)
 
-        # Вычисляем e_t = v^T * tanh( W_h * hi + W_s * h_t )
-        scores = torch.tanh(self.W_h(encoder_outputs) + self.W_s(decoder_state_expanded))
-        scores = self.v(scores).squeeze(-1)  # (batch, seq_len)
+        # Скалярное произведение с each context
+        # context shape: (batch, source_len, hidden_dim)
+        # -> score = context * dec_proj^T
+        scores = torch.bmm(context, dec_proj.transpose(1,2))  # (batch, source_len, 1)
+        scores = scores.squeeze(-1)  # (batch, source_len)
 
-        # αt = softmax(e_t)
-        attn_weights = F.softmax(scores, dim=1)  # (batch, seq_len)
+        alpha = F.softmax(scores, dim=1)  # (batch, source_len)
+        alpha_3d = alpha.unsqueeze(1)     # (batch, 1, source_len)
 
-        # контекст = ∑ α_i * hi
-        context = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs)
-        context = context.squeeze(1)  # (batch, hidden_size)
+        # Теперь контекст = alpha_3d * context
+        attended = torch.bmm(alpha_3d, context)  # (batch, 1, hidden_dim)
+        attended = attended.squeeze(1)           # (batch, hidden_dim)
 
-        return context, attn_weights
+        return attended, alpha
