@@ -126,7 +126,7 @@ class OCRModel(nn.Module):
                 h_dec = dec_hidden[-1][0]  # скрытый state верхнего слоя decoder
                 context_t, attn_weights = self.attention(h_dec,  # (batch, dec_hidden)
                                                          # Превратим encoder_outputs в (batch, seq_len, hidden)
-                                                         encoder_outputs.view(b*Hp, Wp, -1))
+                                                         encoder_outputs.reshape(b, Wp*Hp, -1))
 
                 # 4) Собираем input для Decoder LSTM
                 dec_input = torch.cat([emb_t, context_t], dim=1)  # (batch, embed_dim + hidden)
