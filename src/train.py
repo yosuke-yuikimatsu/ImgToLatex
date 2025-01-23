@@ -58,7 +58,7 @@ def train_main():
     # Инициализируем оптимизатор
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    # Обучение
+    # Обучение 
     num_epochs = 2
     for epoch in range(num_epochs):
         model.train()
@@ -86,20 +86,18 @@ def train_main():
             total_loss += loss.item()
             step_count += 1
 
-            ### Можно включить если лень ждать всего и сразу
-            ##if (batch_idx+1) % 50 == 0:
-                ##avg_loss = total_loss / step_count
-                ##print(f"[Epoch {epoch+1}/{num_epochs}] Step {batch_idx+1}/{len(train_loader)} "
-                      ##f"Loss = {avg_loss:.4f}")
+            if (batch_idx+1) % 50 == 0:
+                avg_loss = total_loss / step_count
+                print(f"[Epoch {epoch+1}/{num_epochs}] Step {batch_idx+1}/{len(train_loader)} "
+                      f"Loss = {avg_loss:.4f}")
                 # Обнулить, чтоб каждые 50 шагов заново считать среднюю
-                ##total_loss = 0.0
-                ##step_count = 0
+                total_loss = 0.0
+                step_count = 0
 
         print(f"=== Epoch {epoch+1} done! ===")
-    
-    ## Сохраняем параметры модели чтобы не уйти с пустыми руками
-    torch.save(model.state_dict(), "model_weights.pth")
 
+    # ===== 7) (Опционально) Пример инференса на одном батче =====
+    ##
 
 if __name__ == "__main__":
     train_main()
