@@ -1,11 +1,10 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
 
 class CNN(nn.Module):
     """
     Аналог createCNNModel из cnn.lua на PyTorch:
-      - Вход: (batch_size, 1, H, W)
+      - Вход: (batch_size, 3, H, W)
       - Выход: (batch_size, H', W', 512)
     """
     def __init__(self):
@@ -61,7 +60,7 @@ class CNN(nn.Module):
         x = self.relu5(self.bn5(self.conv5(x)))  # (batch,512,H/4,W/8)
         x = self.pool4(x)                        # (batch,512,H/8, W/8)
 
-        x = self.relu6(self.bn6(self.conv6(x)))  # (batch,512,H'/W')
+        x = self.relu6(self.bn6(self.conv6(x)))  # (batch,512,H/8,W/8)
 
         # Перестановка: (batch, 512, H', W') -> (batch, H', W', 512)
         x = x.permute(0, 2, 3, 1).contiguous()

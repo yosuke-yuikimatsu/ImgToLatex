@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import matplotlib.pyplot as plt
 from torchvision import transforms
+from pathlib import Path
 class DataGen(Dataset):
     def __init__(self, data_base_dir, data_path, label_path, max_aspect_ratio=None, max_encoder_l_h=None,
                  max_encoder_l_w=None, max_decoder_l=None):
@@ -72,15 +73,21 @@ def visualize_batch_with_labels(images, targets, img_paths):
         ax.imshow(images[i])
         ax.set_title(f"Image {i + 1}")
         ax.axis('off')
-        label_str = indices_to_latex(targets[i])
+        label_str = (targets[i])
         ax.text(0.5, -0.2, label_str, ha='center', va='top', transform=ax.transAxes, fontsize=5, color='black')
     plt.tight_layout()
     plt.show()
 
 def test_loader():
-    data_base_dir = '/Users/semencinman/Documents/GitHub/ImgToLatex/samples/images/formula_images_processed'
-    data_path = '/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_train_filter.lst'
-    label_path = '/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_formulas.tok.lst'
+    # Пути к данным
+    current_dir = Path(__file__).resolve().parent
+    parent_dir = current_dir.parent
+    parent_dir = parent_dir.parent
+    samples_dir = parent_dir / 'samples'
+    data_base_dir = samples_dir / 'images' / 'formula_images_processed'
+    data_path = samples_dir / 'im2latex_train_filter.lst'
+    label_path = samples_dir / 'im2latex_formulas.tok.lst'
+
     dataset = DataGen(data_base_dir, data_path, label_path)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
     for images, targets, img_paths in dataloader:
