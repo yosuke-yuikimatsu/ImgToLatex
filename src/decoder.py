@@ -24,6 +24,7 @@ class Decoder(nn.Module):
     ):
         super().__init__()
 
+        self.pad_index = pad_idx
         self.sos_index = sos_index
         self.eos_index = eos_index
         self.max_length = max_length
@@ -94,7 +95,7 @@ class Decoder(nn.Module):
 
         return alpha, context
 
-    def forward(self, encoder_outputs, tgt_tokens=None, teacher_forcing_ratio=1.0):
+    def forward(self, encoder_outputs, tgt_tokens=None, teacher_forcing_ratio=0.0):
         """
         Запускаем декодер по всем шагам (T) или генерируем последовательность.
 
@@ -177,7 +178,7 @@ class Decoder(nn.Module):
 
             # 8) Обновление input_token: только для тех, кто ещё не закончил генерацию
             # Для тех, кто уже закончил, подаём PAD (или любой другой токен, который не влияет)
-            input_token = torch.where(finished, torch.tensor(0, device=device), next_token)
+            input_token = torch.where(finished, torch.tensor(self.pad_index, device=device), next_token)
 
             # 9) Обновление o_prev
             o_prev = o_t

@@ -30,7 +30,8 @@ class DataGen(Dataset):
         label_list = self._label_to_numeric(label_str) # метки в числа
         return img, label_list, img_path
     def _label_to_numeric(self, label):
-        return [ord(c) for c in label]
+        # Для правильной генерации надо добавлять Start of Sequence token
+        return [129] + [ord(c) for c in label]
 # Для корректной обработки батчей с изображениями разного размера
 def collate_fn(batch):
     images, targets, img_paths = zip(*batch)
