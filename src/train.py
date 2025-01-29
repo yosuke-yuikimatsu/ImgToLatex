@@ -50,7 +50,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
         optimizer.zero_grad()
 
         # Применяем Mixed Precision
-        with autocast(dtype=torch.float16 if DEVICE.type == 'cuda' else torch.float32,device_type=str(DEVICE)):
+        with autocast(device_type=str(DEVICE)):
             logits, alphas = model(
                 images, 
                 tgt_tokens=targets, 
@@ -90,7 +90,7 @@ def predict(model, dataloader, num_batches=1):
         for images, targets, img_paths in dataloader:
             images = images.to(DEVICE)
 
-            with autocast(dtype=torch.float16 if DEVICE.type == 'cuda' else torch.float32,device_type=str(DEVICE)):
+            with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,device_type=str(DEVICE)):
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
 
             generated_tokens = generated_tokens.cpu()
