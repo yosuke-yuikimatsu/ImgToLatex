@@ -192,6 +192,7 @@ def main():
         data_path=TRAIN_DATA_PATH,
         label_path=TRAIN_LABEL_PATH
     )
+    print("Checking current device:", DEVICE)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
                               collate_fn=collate_fn, drop_last=True)
 
@@ -228,7 +229,7 @@ def main():
             criterion=criterion,
             optimizer=optimizer,
             epoch=epoch,
-            teacher_forcing_ratio=0.5  # можно менять в процессе обучения
+            teacher_forcing_ratio=0.2  # можно менять в процессе обучения
         )
         print(f"Epoch {epoch} finished. Avg Loss: {avg_loss:.4f}")
 
