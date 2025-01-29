@@ -16,6 +16,7 @@ from torch.amp import autocast, GradScaler
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 # Пути к данным:
 SAMPLES_DIR = Path.cwd() / ".." / "samples"
 DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
@@ -55,7 +56,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
         optimizer.zero_grad()
 
         # Применяем Mixed Precision
-        with autocast(device_type=DEVICE):
+        with autocast(device_type=str(DEVICE)):
             logits, alphas = model(images, tgt_tokens=targets, teacher_forcing_ratio=teacher_forcing_ratio)
             # logits: (B, T-1, vocab_size)
             # targets: (B, T)
@@ -101,7 +102,7 @@ def predict(model, dataloader, num_batches=1, visualize_attention=False):
 
             # Генерация (tgt_tokens=None) в автокасте смысла нет, т.к. там нет backward,
             # но можно для консистентности
-            with autocast(device_type=DEVICE):
+            with autocast(device_type=str(DEVICE)):
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
 
             generated_tokens = generated_tokens.cpu()
@@ -212,7 +213,7 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 
     # Создаём GradScaler для amp
-    scaler = GradScaler(device=DEVICE)
+    scaler = GradScaler(device=str(DEVICE))
 
     # ----------------- ЦИКЛ ОБУЧЕНИЯ ------------------------------------
     for epoch in range(1, NUM_EPOCHS + 1):
