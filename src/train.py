@@ -55,7 +55,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
         optimizer.zero_grad()
 
         # Применяем Mixed Precision
-        with autocast(device=DEVICE):
+        with autocast(device_type=DEVICE):
             logits, alphas = model(images, tgt_tokens=targets, teacher_forcing_ratio=teacher_forcing_ratio)
             # logits: (B, T-1, vocab_size)
             # targets: (B, T)
@@ -101,7 +101,7 @@ def predict(model, dataloader, num_batches=1, visualize_attention=False):
 
             # Генерация (tgt_tokens=None) в автокасте смысла нет, т.к. там нет backward,
             # но можно для консистентности
-            with autocast(device=DEVICE):
+            with autocast(device_type=DEVICE):
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
 
             generated_tokens = generated_tokens.cpu()
