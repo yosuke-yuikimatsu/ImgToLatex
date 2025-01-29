@@ -23,7 +23,7 @@ VAL_DATA_PATH   = SAMPLES_DIR / "im2latex_validate_filter.lst"    #
 VAL_LABEL_PATH  = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 # Гиперпараметры
-BATCH_SIZE = 32
+BATCH_SIZE = 4
 NUM_EPOCHS = 2
 LEARNING_RATE = 1e-3
 
