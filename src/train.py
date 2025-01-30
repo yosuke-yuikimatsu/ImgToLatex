@@ -127,7 +127,8 @@ def main():
         batch_size=BATCH_SIZE, 
         shuffle=True,
         collate_fn=collate_fn, 
-        drop_last=True
+        drop_last=True,
+        num_workers=4
     )
 
     val_dataset = DataGen(
@@ -140,7 +141,8 @@ def main():
         batch_size=BATCH_SIZE, 
         shuffle=False,
         collate_fn=collate_fn, 
-        drop_last=False
+        drop_last=False,
+        num_workers=4
     )
 
     print("Device:", DEVICE)
@@ -156,7 +158,11 @@ def main():
         max_length=MAX_LENGTH
     ).to(DEVICE)
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs!")
+        model = nn.DataParallel(model).to(DEVICE)
+
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
