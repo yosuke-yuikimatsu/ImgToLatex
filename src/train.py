@@ -24,6 +24,10 @@ TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 VAL_DATA_PATH   = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH  = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
+# Путь для сохранения модели
+MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
+os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
+
 # Гиперпараметры
 BATCH_SIZE = 16
 NUM_EPOCHS = 10         
@@ -190,6 +194,10 @@ def main():
         predict(model, val_loader, num_batches=1)
 
     print("Training done!")
+
+    # Сохраняем модель
+    torch.save(model.state_dict(), MODEL_SAVE_PATH)
+    print(f"Model saved to {MODEL_SAVE_PATH}")
 
 if __name__ == "__main__":
     main()
