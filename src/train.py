@@ -10,7 +10,6 @@ from pathlib import Path
 from model import ImageToLatexModel
 from data.dataloader import DataGen, collate_fn, indices_to_latex, visualize_batch_with_labels
 
-# --- Добавляем из torch.cuda.amp ---
 from torch.amp import autocast, GradScaler
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
@@ -24,7 +23,11 @@ TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 VAL_DATA_PATH   = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH  = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
-# Путь для сохранения модели
+# ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
+PARAMS_DIR = Path("/content/drive/MyDrive/params")
+os.makedirs(PARAMS_DIR, exist_ok=True)
+
+# Можно также сохранить финальный вариант модели локально (опционально)
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
@@ -94,7 +97,7 @@ def predict(model, dataloader, num_batches=1):
         for images, targets, img_paths in dataloader:
             images = images.to(DEVICE)
 
-            with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,device_type=str(DEVICE)):
+            with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32, device_type=str(DEVICE)):
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
 
             generated_tokens = generated_tokens.cpu()
@@ -173,8 +176,27 @@ def main():
     # Schedule для teacher forcing: линейно уменьшаем от START до END за NUM_EPOCHS
     teacher_forcing_schedule = torch.linspace(START_TEACHER_FORCING, END_TEACHER_FORCING, steps=NUM_EPOCHS).tolist()
 
-    for epoch in range(1, NUM_EPOCHS+1):
-        tf_ratio = teacher_forcing_schedule[epoch-1]
+    # ---------------- ВОССТАНОВЛЕНИЕ ПОСЛЕДНЕЙ КОНТРОЛЬНОЙ ТОЧКИ ----------------
+    # Ищем файлы чекпоинтов в папке PARAMS_DIR с именами вида model_epoch_{epoch}.pth
+    checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
+    if checkpoint_files:
+        def extract_epoch(checkpoint_path: Path):
+            # Ожидается формат имени: model_epoch_{epoch}.pth
+            return int(checkpoint_path.stem.split("_")[-1])
+        # Сортируем по номеру эпохи
+        checkpoint_files.sort(key=extract_epoch)
+        latest_checkpoint = checkpoint_files[-1]
+        latest_epoch = extract_epoch(latest_checkpoint)
+        print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
+        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
+        start_epoch = latest_epoch + 1
+    else:
+        print("Чекпоинты не найдены, начинаем обучение с нуля.")
+        start_epoch = 1
+
+    # ----------------- ОБУЧЕНИЕ ----------------- #
+    for epoch in range(start_epoch, NUM_EPOCHS + 1):
+        tf_ratio = teacher_forcing_schedule[epoch - 1]  # индексируем с 0
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} ===")
 
         avg_loss = train_one_epoch(
@@ -193,9 +215,14 @@ def main():
         print("--- Пример инференса (1 батч) ---")
         predict(model, val_loader, num_batches=1)
 
+        # Сохраняем чекпоинт после каждой эпохи
+        checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
+        torch.save(model.state_dict(), checkpoint_path)
+        print(f"Чекпоинт сохранён: {checkpoint_path}")
+
     print("Training done!")
 
-    # Сохраняем модель
+    # Опционально: сохраняем финальную модель локально
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved to {MODEL_SAVE_PATH}")
 
