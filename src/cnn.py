@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import torch.nn as nn
 
 
@@ -66,5 +65,3 @@ class CNN(nn.Module):
         # Перестановка: (batch, 512, H', W') -> (batch, H', W', 512)
         x = x.permute(0, 2, 3, 1).contiguous()
         return x
-=======
->>>>>>> dataloader

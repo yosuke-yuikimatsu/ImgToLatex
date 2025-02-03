@@ -9,7 +9,7 @@ from pathlib import Path
 
 from model import ImageToLatexModel
 from data.dataloader import DataGen, collate_fn, indices_to_latex, visualize_batch_with_labels
-from ..tests.metrics.bleu_score import compute_bleu
+from metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
 
@@ -214,6 +214,7 @@ def main():
         start_epoch = 1
 
     # ----------------- ОБУЧЕНИЕ ----------------- #
+    predict(model,val_loader,num_batches=1,compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         tf_ratio = teacher_forcing_schedule[epoch - 1]  # индексируем с 0
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} ===")
