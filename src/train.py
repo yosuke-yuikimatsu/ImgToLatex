@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import os
 import torch
 import torch.nn as nn
@@ -10,6 +9,7 @@ from pathlib import Path
 
 from model import ImageToLatexModel
 from data.dataloader import DataGen, collate_fn, indices_to_latex, visualize_batch_with_labels
+from ..tests.metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
 
@@ -90,30 +90,41 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
     return avg_loss
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
-def predict(model, dataloader, num_batches=1):
+def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     model.eval()
+    all_bleu = []
     batches_processed = 0
+    bleu_score = None
 
     with torch.no_grad():
         for images, targets, img_paths in dataloader:
             images = images.to(DEVICE)
 
-            with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32, device_type=str(DEVICE)):
+            with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
+                          device_type=str(DEVICE)):
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
 
             generated_tokens = generated_tokens.cpu()
             targets = targets.cpu()
 
             for i in range(len(images)):
+                # Для вычисления BLEU удаляем первый токен (SOS) из референсной последовательности
+                ref_tokens = targets[i].tolist()[1:]
+                cand_tokens = generated_tokens[i].tolist()
+                
+                if compute_bleu_metric:
+                    bleu_score = compute_bleu(cand_tokens, [ref_tokens])
+                    all_bleu.append(bleu_score)
+                else:
+                    print("BLEU вычисление отключено.")
+
                 real_str = indices_to_latex(targets[i].tolist())
                 pred_str = indices_to_latex(generated_tokens[i].tolist())
                 print(f"=== Sample {i+1} ===")
                 print(f"  Path : {img_paths[i]}")
                 print(f"  Real : {real_str}")
                 print(f"  Pred : {pred_str}")
-
-            # Здесь можно визуализировать внимание, если нужно
-            # visualize_attention_maps(images, alphas_all, generated_tokens)
+                print(f"BLEU : {bleu_score:.2f}")
 
             del images, targets, generated_tokens, alphas_all
             torch.cuda.empty_cache()
@@ -121,6 +132,13 @@ def predict(model, dataloader, num_batches=1):
             batches_processed += 1
             if batches_processed >= num_batches:
                 break
+
+    if compute_bleu_metric and all_bleu:
+        avg_bleu = sum(all_bleu) / len(all_bleu)
+        print(f"Average BLEU: {avg_bleu:.2f}")
+    elif compute_bleu_metric:
+        print("No BLEU scores computed.")
+
 
 # -------------------- MAIN --------------------- #
 def main():
@@ -214,7 +232,7 @@ def main():
 
         # Небольшой predict
         print("--- Пример инференса (1 батч) ---")
-        predict(model, val_loader, num_batches=1)
+        predict(model, val_loader, num_batches=1,compute_bleu_metric=True)
 
         # Сохраняем чекпоинт после каждой эпохи
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
@@ -229,5 +247,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-=======
->>>>>>> dataloader
