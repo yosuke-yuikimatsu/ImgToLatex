@@ -46,7 +46,7 @@ class ImageToLatexModel(nn.Module):
         self.encoder = EncoderBiLSTM(
             input_dim=512,
             hidden_dim=enc_hidden_dim,
-            num_layers=1,        # можно увеличить при необходимости
+            num_layers=3,        # можно увеличить при необходимости
             dropout=0.0          # если num_layers > 1, можно добавить дропаут
         )
 
