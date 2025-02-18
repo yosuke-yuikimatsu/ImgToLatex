@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 
 from model import ImageToLatexModel
-from data.dataloader import DataGen, collate_fn, indices_to_latex, visualize_batch_with_labels
+from data.dataloader import DataGen, dynamic_collate_fn, indices_to_latex
 from metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
@@ -21,8 +21,8 @@ SAMPLES_DIR = Path.cwd() / ".." / "samples"
 DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
 TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
-VAL_DATA_PATH   = SAMPLES_DIR / "im2latex_validate_filter.lst"
-VAL_LABEL_PATH  = SAMPLES_DIR / "im2latex_formulas.tok.lst"
+VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
+VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
 PARAMS_DIR = Path("/content/drive/MyDrive/params")
@@ -34,10 +34,10 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
 BATCH_SIZE = 6
-NUM_EPOCHS = 100         
-LEARNING_RATE = 1e-4     
-START_TEACHER_FORCING = 0.7  
-END_TEACHER_FORCING   = 0.2 
+NUM_EPOCHS = 100
+LEARNING_RATE = 1e-4
+START_TEACHER_FORCING = 0.7
+END_TEACHER_FORCING = 0.2
 
 # Размер словаря и специальные токены
 VOCAB_SIZE = 131
@@ -45,6 +45,7 @@ PAD_IDX = 0
 SOS_IDX = 129
 EOS_IDX = 130
 MAX_LENGTH = 300
+
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teacher_forcing_ratio=0.5):
@@ -60,8 +61,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
         # Применяем Mixed Precision
         with autocast(device_type=str(DEVICE)):
             logits, alphas = model(
-                images, 
-                tgt_tokens=targets, 
+                images,
+                tgt_tokens=targets,
                 teacher_forcing_ratio=teacher_forcing_ratio
             )
 
@@ -80,7 +81,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 
         # Печать каждые 50 итераций
         if (step + 1) % 50 == 0:
-            print(f"[Epoch {epoch}] Step [{step+1}/{len(dataloader)}], Loss: {loss.item():.4f}")
+            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.4f}")
 
         # Явно очищаем память
         del images, targets, logits, alphas, loss
@@ -88,6 +89,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 
     avg_loss = total_loss / len(dataloader)
     return avg_loss
+
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
@@ -111,7 +113,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                 # Для вычисления BLEU удаляем первый токен (SOS) из референсной последовательности
                 ref_tokens = targets[i].tolist()[1:]
                 cand_tokens = generated_tokens[i].tolist()
-                
+
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
                     all_bleu.append(bleu_score)
@@ -120,7 +122,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
                 real_str = indices_to_latex(targets[i].tolist())
                 pred_str = indices_to_latex(generated_tokens[i].tolist())
-                print(f"=== Sample {i+1} ===")
+                print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
                 print(f"  Real : {real_str}")
                 print(f"  Pred : {pred_str}")
@@ -149,10 +151,10 @@ def main():
         label_path=TRAIN_LABEL_PATH
     )
     train_loader = DataLoader(
-        train_dataset, 
-        batch_size=BATCH_SIZE, 
+        train_dataset,
+        batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=collate_fn, 
+        collate_fn=dynamic_collate_fn,
         drop_last=True,
         num_workers=4
     )
@@ -163,10 +165,10 @@ def main():
         label_path=VAL_LABEL_PATH
     )
     val_loader = DataLoader(
-        val_dataset, 
-        batch_size=BATCH_SIZE, 
+        val_dataset,
+        batch_size=BATCH_SIZE,
         shuffle=False,
-        collate_fn=collate_fn, 
+        collate_fn=dynamic_collate_fn,  
         drop_last=False,
         num_workers=4
     )
@@ -202,6 +204,7 @@ def main():
         def extract_epoch(checkpoint_path: Path):
             # Ожидается формат имени: model_epoch_{epoch}.pth
             return int(checkpoint_path.stem.split("_")[-1])
+
         # Сортируем по номеру эпохи
         checkpoint_files.sort(key=extract_epoch)
         latest_checkpoint = checkpoint_files[-1]
@@ -214,7 +217,7 @@ def main():
         start_epoch = 1
 
     # ----------------- ОБУЧЕНИЕ ----------------- #
-    predict(model,val_loader,num_batches=1,compute_bleu_metric=True)
+    predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         tf_ratio = teacher_forcing_schedule[epoch - 1]  # индексируем с 0
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} ===")
@@ -233,7 +236,7 @@ def main():
 
         # Небольшой predict
         print("--- Пример инференса (1 батч) ---")
-        predict(model, val_loader, num_batches=1,compute_bleu_metric=True)
+        predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
 
         # Сохраняем чекпоинт после каждой эпохи
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
@@ -245,6 +248,7 @@ def main():
     # Опционально: сохраняем финальную модель локально
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved to {MODEL_SAVE_PATH}")
+
 
 if __name__ == "__main__":
     main()

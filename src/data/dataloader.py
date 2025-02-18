@@ -77,6 +77,10 @@ class DataGen(Dataset):
 
                 yield images, labels, img_paths
 
+def indices_to_latex(indices):
+    cleaned_indices = [idx for idx in indices if idx != 0]  # Убираем нули
+    return ''.join([chr(idx) for idx in cleaned_indices])
+
 
 def dynamic_collate_fn(batch):
     batch.sort(key=lambda x: x[0].size[0] / x[0].size[1], reverse=True)
