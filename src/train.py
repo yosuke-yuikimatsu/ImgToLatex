@@ -44,7 +44,7 @@ VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 129
 EOS_IDX = 130
-MAX_LENGTH = 300
+MAX_LENGTH = 30
 
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
