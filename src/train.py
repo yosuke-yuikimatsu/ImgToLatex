@@ -33,7 +33,7 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 6
+BATCH_SIZE = 8
 NUM_EPOCHS = 100
 LEARNING_RATE = 1e-4
 START_TEACHER_FORCING = 0.7
@@ -178,7 +178,7 @@ def main():
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
         embed_dim=256,
-        enc_hidden_dim=256,
+        enc_hidden_dim=512,
         dec_hidden_dim=512,
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,

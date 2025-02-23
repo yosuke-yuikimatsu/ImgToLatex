@@ -1,35 +1,40 @@
-import torch.nn as nn 
+import torch
+import torch.nn as nn
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-class EncoderBiLSTM(nn.Module):
-    """
-    Применяем BiLSTM по каждой строке (длина W).
-    На вход ожидается тензор (batch, H, W, C), где C=512 (или любой input_dim).
-    Выход: (batch, H, W, 2*hidden_dim)
-    """
-    def __init__(self, input_dim=512, hidden_dim=256, num_layers=1, dropout=0.0):
-        super(EncoderBiLSTM, self).__init__()
-        # bidirectional=True для BiLSTM
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0,  # Устанавливаем dropout=0.0, если num_layers=1
-            bidirectional=True
-        )
+class TransformerEncoderModule(nn.Module):
+    def __init__(self, enc_hid_dim=512, num_heads=4, num_layers=2, ffn_dim=1024):
+        """
+        Параметры:
+          enc_hid_dim: размерность выходных эмбеддингов (d_model в трансформере)
+          num_heads: число голов внимания
+          num_layers: число слоёв энкодера
+          ffn_dim: размерность внутреннего слоя FFN
+        """
+        super(TransformerEncoderModule, self).__init__()
+        self.enc_hid_dim = enc_hid_dim
+        # Позиционное кодирование для последовательностей длиной до 32768
+        self.positional_encoding = nn.Embedding(32768, enc_hid_dim)
+        encoder_layer = TransformerEncoderLayer(d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim)
+        self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, x):
-        # x: (batch, H, W, input_dim=512)
-        b, H, W, C = x.shape
-        # Склеиваем (batch, H) -> одна "партия" строк
-        # Получим: (batch*H, W, C)
-        x_reshaped = x.view(b * H, W, C)
-
-        # Прогоняем через BiLSTM
-        # Выход lstm_out будет (batch*H, W, 2 * hidden_dim),
-        # тк bidirectional=True
-        lstm_out, _ = self.lstm(x_reshaped)  # (_, (h_n, c_n)) можно получить state при необходимости
-
-        # Возвращаем исходные измерения: (batch, H, W, 2*hidden_dim)
-        lstm_out = lstm_out.view(b, H, W, -1)
-        return lstm_out
+        """
+        x: тензор формы (B, H, W, enc_hid_dim)
+        Сначала преобразуем в последовательность: (B, H*W, enc_hid_dim),
+        затем применим позиционное кодирование и трансформер,
+        и, наконец, вернём в форму (B, H, W, enc_hid_dim).
+        """
+        B, H, W, D = x.shape  # D должен быть равен enc_hid_dim (например, 512)
+        seq_len = H * W
+        # Преобразуем в (B, seq_len, D)
+        x_flat = x.view(B, seq_len, D)
+        # Создаем позиции (B, seq_len)
+        positions = torch.arange(seq_len, device=x.device).unsqueeze(0).repeat(B, 1)
+        pos_encoding = self.positional_encoding(positions)
+        x_flat = x_flat + pos_encoding
+        # Пропускаем через трансформер-энкодер
+        x_enc = self.transformer_encoder(x_flat)  # (B, seq_len, enc_hid_dim)
+        # Возвращаем исходную пространственную форму: (B, H, W, enc_hid_dim)
+        x_out = x_enc.view(B, H, W, D)
+        return x_out
