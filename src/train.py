@@ -33,9 +33,9 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 8
+BATCH_SIZE = 10
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-5
 START_TEACHER_FORCING = 0.8
 END_TEACHER_FORCING = 0.0
 
@@ -44,7 +44,7 @@ VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 100
+MAX_LENGTH = 30
 
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
@@ -148,7 +148,8 @@ def main():
     train_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
         data_path=TRAIN_DATA_PATH,
-        label_path=TRAIN_LABEL_PATH
+        label_path=TRAIN_LABEL_PATH,
+        max_decoder_l=MAX_LENGTH
     )
     train_loader = DataLoader(
         train_dataset,
@@ -211,7 +212,7 @@ def main():
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE,weights_only=False))
+        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE,weights_only=True))
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
