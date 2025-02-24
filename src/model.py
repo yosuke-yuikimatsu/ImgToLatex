@@ -21,9 +21,9 @@ class ImageToLatexModel(nn.Module):
         enc_hidden_dim: int = 512,
         dec_hidden_dim: int = 512,
         pad_idx: int = 0,
-        sos_index: int = 129,
-        eos_index: int = 130,
-        max_length: int = 300
+        sos_index: int = 1,
+        eos_index: int = 2,
+        max_length: int = 100
     ):
         super().__init__()
 

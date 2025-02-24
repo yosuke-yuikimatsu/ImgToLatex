@@ -17,7 +17,7 @@ class DataGen(Dataset):
     GO = 1
     EOS = 2
 
-    def __init__(self, data_base_dir, data_path, label_path, max_aspect_ratio=4.0, max_decoder_l=20,
+    def __init__(self, data_base_dir, data_path, label_path, max_aspect_ratio=4.0, max_decoder_l=100,
                  img_width_range=(12, 320)):
         self.data_base_dir = Path(data_base_dir)
         self.max_aspect_ratio = max_aspect_ratio

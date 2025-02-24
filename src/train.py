@@ -35,16 +35,16 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 8
 NUM_EPOCHS = 100
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 1e-4
 START_TEACHER_FORCING = 0.8
 END_TEACHER_FORCING = 0.0
 
 # Размер словаря и специальные токены
 VOCAB_SIZE = 131
 PAD_IDX = 0
-SOS_IDX = 129
-EOS_IDX = 130
-MAX_LENGTH = 30
+SOS_IDX = 1
+EOS_IDX = 2
+MAX_LENGTH = 100
 
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
@@ -156,7 +156,7 @@ def main():
         shuffle=True,
         collate_fn=dynamic_collate_fn,
         drop_last=True,
-        num_workers=4
+        num_workers=2
     )
 
     val_dataset = DataGen(
@@ -170,7 +170,7 @@ def main():
         shuffle=False,
         collate_fn=dynamic_collate_fn,  
         drop_last=False,
-        num_workers=4
+        num_workers=2
     )
 
     print("Device:", DEVICE)
@@ -211,7 +211,7 @@ def main():
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
+        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE,weights_only=False))
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")

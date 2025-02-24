@@ -15,7 +15,7 @@ class TransformerEncoderModule(nn.Module):
         self.enc_hid_dim = enc_hid_dim
         # Позиционное кодирование для последовательностей длиной до 32768
         self.positional_encoding = nn.Embedding(32768, enc_hid_dim)
-        encoder_layer = TransformerEncoderLayer(d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim)
+        encoder_layer = TransformerEncoderLayer(d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim,batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, x):
