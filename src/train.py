@@ -35,8 +35,8 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 8
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-4
-START_TEACHER_FORCING = 0.5
+LEARNING_RATE = 5e-4
+START_TEACHER_FORCING = 0.8
 END_TEACHER_FORCING = 0.0
 
 # Размер словаря и специальные токены
@@ -179,6 +179,7 @@ def main():
         vocab_size=VOCAB_SIZE,
         embed_dim=256,
         enc_hidden_dim=512,
+        ## Должны быть равны иначе всё наебнётся
         dec_hidden_dim=512,
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
