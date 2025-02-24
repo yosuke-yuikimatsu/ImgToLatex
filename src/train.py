@@ -163,7 +163,8 @@ def main():
     val_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
         data_path=VAL_DATA_PATH,
-        label_path=VAL_LABEL_PATH
+        label_path=VAL_LABEL_PATH,
+        max_decoder_l=MAX_LENGTH
     )
     val_loader = DataLoader(
         val_dataset,
