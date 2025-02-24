@@ -120,7 +120,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                 else:
                     print("BLEU вычисление отключено.")
 
-                real_str = indices_to_latex(targets[i].tolist())
+                real_str = indices_to_latex(targets[i].tolist()[1:])
                 pred_str = indices_to_latex(generated_tokens[i].tolist())
                 print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
