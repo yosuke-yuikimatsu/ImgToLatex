@@ -25,7 +25,7 @@ VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/content/drive/MyDrive/params")
+PARAMS_DIR = Path("/content/drive/MyDrive/params_resnet")
 os.makedirs(PARAMS_DIR, exist_ok=True)
 
 # Можно также сохранить финальный вариант модели локально (опционально)
