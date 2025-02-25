@@ -35,7 +35,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 10
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 5e-5
 START_TEACHER_FORCING = 0.8
 END_TEACHER_FORCING = 0.0
 
@@ -81,7 +81,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 
         # Печать каждые 50 итераций
         if (step + 1) % 50 == 0:
-            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.4f}")
+            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
 
         # Явно очищаем память
         del images, targets, logits, alphas, loss
