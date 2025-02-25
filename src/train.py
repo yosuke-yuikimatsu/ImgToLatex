@@ -74,6 +74,9 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
             )
 
         scaler.scale(loss).backward()
+        # Подключаем отсечение градиентов(Уменьшение их нормы до max_norm)
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
         scaler.step(optimizer)
         scaler.update()
 
