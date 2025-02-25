@@ -36,7 +36,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
 LEARNING_RATE = 1e-4
-START_TEACHER_FORCING = 0.8
+START_TEACHER_FORCING = 0.6
 END_TEACHER_FORCING = 0.0
 
 # Размер словаря и специальные токены
