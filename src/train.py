@@ -181,8 +181,6 @@ def main():
         vocab_size=VOCAB_SIZE,
         embed_dim=256,
         enc_hidden_dim=512,
-        ## Должны быть равны иначе всё наебнётся
-        dec_hidden_dim=512,
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,

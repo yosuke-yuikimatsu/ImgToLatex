@@ -1,6 +1,8 @@
 import torch.nn as nn
 
 
+### Надо прикрутить ResNet 50 сюда вместо кастомной свертки
+
 class CNN(nn.Module):
     """
     Аналог createCNNModel из cnn.lua на PyTorch:

@@ -6,7 +6,8 @@ class TransformerEncoderModule(nn.Module):
     def __init__(self, enc_hid_dim=512, num_heads=4, num_layers=2, ffn_dim=1024):
         """
         Параметры:
-          enc_hid_dim: размерность выходных эмбеддингов (d_model в трансформере)
+          enc_hid_dim: размерность выходных эмбеддингов (d_model в трансформере), 
+          должен совпадать с количеством выходных каналов в cnn
           num_heads: число голов внимания
           num_layers: число слоёв энкодера
           ffn_dim: размерность внутреннего слоя FFN
