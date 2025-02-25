@@ -35,8 +35,8 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
-START_TEACHER_FORCING = 1.0
+LEARNING_RATE = 1e-4
+START_TEACHER_FORCING = 0.8
 END_TEACHER_FORCING = 0.0
 
 # Размер словаря и специальные токены
@@ -76,7 +76,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
         scaler.scale(loss).backward()
         # Подключаем отсечение градиентов(Уменьшение их нормы до max_norm)
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         scaler.step(optimizer)
         scaler.update()
 
@@ -182,8 +182,8 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        embed_dim=256,
-        enc_hidden_dim=512,
+        embed_dim=1024,
+        enc_hidden_dim=2048,
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,

@@ -27,7 +27,7 @@ class ImageToLatexModel(nn.Module):
         super().__init__()
 
         # 1) CNN – выдаёт (B, H', W', 512)
-        self.cnn = CNN()
+        self.cnn = CNN(output_channels=enc_hidden_dim)
 
         # 2) Transformer-энкодер, который теперь работает с размерностью 512
         self.encoder = TransformerEncoderModule(enc_hid_dim=enc_hidden_dim)

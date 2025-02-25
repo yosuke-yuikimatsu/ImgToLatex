@@ -1,69 +1,34 @@
+import torch
 import torch.nn as nn
+import torchvision.models as models
 
-
-### Надо прикрутить ResNet 50 сюда вместо кастомной свертки
 
 class CNN(nn.Module):
-    """
-    Аналог createCNNModel из cnn.lua на PyTorch:
-      - Вход: (batch_size, 3, H, W)
-      - Выход: (batch_size, H', W', 512)
-    """
-    def __init__(self):
+    def __init__(self, output_channels=512):
+        """
+        Параметры:
+          output_channels: число каналов на выходе, например 512 или другое значение.
+          pretrained: использовать ли предобученную ResNet50.
+        """
         super(CNN, self).__init__()
-        self.sub_mean = -128.0
-        self.div_val = 128.0
-
-        # Блок 1
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        # Блок 2
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        # Блок 3
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(256)
-        self.relu3 = nn.ReLU(inplace=True)
-
-        self.conv4 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
-        self.relu4 = nn.ReLU(inplace=True)
-        self.pool3 = nn.MaxPool2d(kernel_size=(1,2), stride=(1,2)) # высоту не уменьшаем, уменьшаем ширину
-
-        # Блок 4
-        self.conv5 = nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
-        self.bn5 = nn.BatchNorm2d(512)
-        self.relu5 = nn.ReLU(inplace=True)
-
-        self.pool4 = nn.MaxPool2d(kernel_size=(2,1), stride=(2,1)) # уменьшаем высоту, ширину не трогаем
-
-        self.conv6 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
-        self.bn6 = nn.BatchNorm2d(512)
-        self.relu6 = nn.ReLU(inplace=True)
+        # Загружаем предобученную ResNet50
+        resnet = models.resnet50(weights=models.resnet.ResNet50_Weights.DEFAULT)
+        # Убираем слои глобального усреднения и классификации:
+        self.features = nn.Sequential(*list(resnet.children())[:-2])
+        # Если требуется изменить число каналов (ResNet50 выдает 2048), добавляем 1x1 свертку.
+        self.conv_reduction = None
+        if output_channels != 2048:
+            self.conv_reduction = nn.Conv2d(2048, output_channels, kernel_size=1)
+        self.output_channels = output_channels
 
     def forward(self, x):
-        # Нормируем: (x - 128)/128
-        x = x + self.sub_mean
-        x = x / self.div_val
-
-        x = self.relu1(self.conv1(x))  # (batch,64,H,W)
-        x = self.pool1(x)             # (batch,64,H/2,W/2)
-
-        x = self.relu2(self.conv2(x))  # (batch,128,H/2,W/2)
-        x = self.pool2(x)             # (batch,128,H/4,W/4)
-
-        x = self.relu3(self.bn3(self.conv3(x)))  # (batch,256,H/4,W/4)
-        x = self.relu4(self.conv4(x))            # (batch,256,H/4,W/4)
-        x = self.pool3(x)                        # (batch,256,H/4, W/8)
-
-        x = self.relu5(self.bn5(self.conv5(x)))  # (batch,512,H/4,W/8)
-        x = self.pool4(x)                        # (batch,512,H/8, W/8)
-
-        x = self.relu6(self.bn6(self.conv6(x)))  # (batch,512,H/8,W/8)
-
-        # Перестановка: (batch, 512, H', W') -> (batch, H', W', 512)
+        """
+        x: входной тензор с размерностью (B, 3, H, W)
+        Возвращает: (B, H', W', output_channels)
+        """
+        x = self.features(x)  # (B, 2048, H', W')
+        if self.conv_reduction is not None:
+            x = self.conv_reduction(x)  # (B, output_channels, H', W')
+        # Меняем порядок осей: (B, output_channels, H', W') -> (B, H', W', output_channels)
         x = x.permute(0, 2, 3, 1).contiguous()
         return x
