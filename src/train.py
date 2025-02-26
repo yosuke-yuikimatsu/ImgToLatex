@@ -159,7 +159,7 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=True,
         collate_fn=dynamic_collate_fn,
-        drop_last=True,
+        drop_last=False,
         num_workers=2
     )
 
@@ -172,7 +172,7 @@ def main():
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         collate_fn=dynamic_collate_fn,  
         drop_last=False,
         num_workers=2
