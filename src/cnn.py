@@ -12,7 +12,7 @@ class CNN(nn.Module):
         """
         super(CNN, self).__init__()
         # Загружаем предобученную ResNet50
-        resnet = models.resnet50()
+        resnet = models.resnet50(weights=models.resnet.ResNet50_Weights.DEFAULT)
         # Убираем слои глобального усреднения и классификации:
         self.features = nn.Sequential(*list(resnet.children())[:-2])
         # Если требуется изменить число каналов (ResNet50 выдает 2048), добавляем 1x1 свертку.

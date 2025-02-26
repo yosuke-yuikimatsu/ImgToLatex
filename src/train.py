@@ -36,7 +36,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
 LEARNING_RATE = 1e-4
-START_TEACHER_FORCING = 0.6
+START_TEACHER_FORCING = 0.9
 END_TEACHER_FORCING = 0.0
 
 # Размер словаря и специальные токены
@@ -159,7 +159,7 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=True,
         collate_fn=dynamic_collate_fn,
-        drop_last=True,
+        drop_last=False,
         num_workers=2
     )
 
@@ -172,7 +172,7 @@ def main():
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         collate_fn=dynamic_collate_fn,  
         drop_last=False,
         num_workers=2
