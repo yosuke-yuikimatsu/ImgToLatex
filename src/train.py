@@ -35,7 +35,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-5
 START_TEACHER_FORCING = 0.9
 END_TEACHER_FORCING = 0.0
 
@@ -74,9 +74,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
             )
 
         scaler.scale(loss).backward()
-        # Подключаем отсечение градиентов(Уменьшение их нормы до max_norm)
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         scaler.step(optimizer)
         scaler.update()
 
