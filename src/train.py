@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+import numpy as np
 
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -137,7 +138,9 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
     if compute_bleu_metric and all_bleu:
         avg_bleu = sum(all_bleu) / len(all_bleu)
+        var_bleu = np.var(all_bleu)
         print(f"Average BLEU: {avg_bleu:.2f}")
+        print(f"Variance of BLEU: {var_bleu}")
     elif compute_bleu_metric:
         print("No BLEU scores computed.")
 
