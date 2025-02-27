@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, enc_hid_dim=512, num_heads=4, num_layers=2, ffn_dim=1024):
+    def __init__(self, enc_hid_dim=512, num_heads=8, num_layers=6, ffn_dim=2048):
         """
         Параметры:
           enc_hid_dim: размерность выходных эмбеддингов (d_model в трансформере), 
