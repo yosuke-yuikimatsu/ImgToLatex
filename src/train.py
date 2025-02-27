@@ -237,7 +237,7 @@ def main():
 
         # Небольшой predict
         print("--- Пример инференса (1 батч) ---")
-        predict(model, val_loader, num_batches=2, compute_bleu_metric=True)
+        predict(model, val_loader, num_batches=5, compute_bleu_metric=True)
 
         # Сохраняем чекпоинт после каждой эпохи
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
