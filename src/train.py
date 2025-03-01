@@ -125,11 +125,11 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
                 real_str = indices_to_latex(targets[i].tolist()[1:])
                 pred_str = indices_to_latex(generated_tokens[i].tolist())
-                ##print(f"=== Sample {i + 1} ===")
-                ##print(f"  Path : {img_paths[i]}")
-                ##print(f"  Real : {real_str}")
-                ##print(f"  Pred : {pred_str}")
-                ##print(f"BLEU : {bleu_score:.2f}")
+                print(f"=== Sample {i + 1} ===")
+                print(f"  Path : {img_paths[i]}")
+                print(f"  Real : {real_str}")
+                print(f"  Pred : {pred_str}")
+                print(f"BLEU : {bleu_score:.2f}")
 
             del images, targets, generated_tokens, alphas_all
             torch.cuda.empty_cache()
@@ -142,7 +142,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
         avg_bleu = sum(all_bleu) / len(all_bleu)
         var_bleu = np.var(all_bleu)
         print(f"Average BLEU: {avg_bleu:.2f}")
-        #print(f"Variance of BLEU: {var_bleu}")
+        print(f"Variance of BLEU: {var_bleu}")
     elif compute_bleu_metric:
         print("No BLEU scores computed.")
 
@@ -239,8 +239,7 @@ def main():
         start_epoch = 1
 
     # ----------------- ОБУЧЕНИЕ ----------------- #
-    for i in range(40):
-        predict(model, test_loader, num_batches=len(test_loader), compute_bleu_metric=True)
+    predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         tf_ratio = teacher_forcing_schedule[epoch - 1]  # индексируем с 0
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} ===")
