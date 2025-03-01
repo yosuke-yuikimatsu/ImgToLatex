@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -38,7 +39,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 5e-6
 START_TEACHER_FORCING = 1.0
 END_TEACHER_FORCING = 0.0
 
@@ -146,6 +147,10 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     elif compute_bleu_metric:
         print("No BLEU scores computed.")
 
+# -------------------- Exponential teacher forcing decrease -------------------- #
+def get_teacher_forcing_ratio(epoch, start=1.0, end=0.0, decay_rate=0.05):
+    return max(end, start * math.exp(-decay_rate * epoch))
+
 
 # -------------------- MAIN --------------------- #
 def main():
@@ -217,7 +222,8 @@ def main():
     scaler = GradScaler(device=str(DEVICE))
 
     # Schedule для teacher forcing: линейно уменьшаем от START до END за NUM_EPOCHS
-    teacher_forcing_schedule = torch.linspace(START_TEACHER_FORCING, END_TEACHER_FORCING, steps=NUM_EPOCHS).tolist()
+    teacher_forcing_schedule = [get_teacher_forcing_ratio(epoch, START_TEACHER_FORCING, END_TEACHER_FORCING, decay_rate=0.05)
+                              for epoch in range(NUM_EPOCHS)]
 
     # ---------------- ВОССТАНОВЛЕНИЕ ПОСЛЕДНЕЙ КОНТРОЛЬНОЙ ТОЧКИ ----------------
     # Ищем файлы чекпоинтов в папке PARAMS_DIR с именами вида model_epoch_{epoch}.pth
