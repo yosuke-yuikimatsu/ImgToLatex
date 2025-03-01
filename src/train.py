@@ -8,10 +8,14 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 
 from model import ImageToLatexModel
-from data.dataloader import DataGen, dynamic_collate_fn, indices_to_latex
+from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
+
+def indices_to_latex(sequence) :
+    annotation = ''.join([chr(idx) if idx > 2 else '' for idx in sequence])
+    return annotation
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
