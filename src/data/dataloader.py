@@ -1,4 +1,3 @@
-import os
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
@@ -6,6 +5,8 @@ from PIL import Image
 from pathlib import Path
 import math
 import random
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 def load_labels(label_path):
@@ -59,7 +60,7 @@ class DataGen(Dataset):
 
     def _label_to_numeric(self, label):
         label_indices = [self.GO] + [ord(c) for c in label] + [self.EOS]
-        return label_indices[:self.max_decoder_l]  # Усечение длинных меток
+        return label_indices[:self.max_decoder_l] # усекаем длинные метки
 
     def get_buckets(self, batch_size):
         for bucket_idx, bucket in self.bucket_data.items():
@@ -77,9 +78,44 @@ class DataGen(Dataset):
 
                 yield images, labels, img_paths
 
-def indices_to_latex(indices):
-    cleaned_indices = [idx for idx in indices if idx != 0]  # Убираем нули
-    return ''.join([chr(idx) for idx in cleaned_indices])
+
+def find_empty_columns(img_array, threshold=40):
+    column_sums = np.sum(img_array, axis=(0, 2)) if len(img_array.shape) == 3 else np.sum(img_array, axis=0)
+    empty_columns = np.where(column_sums < threshold)[0] # выбираем столбцы, векторная 1-норма которых достаточно близка к нулю
+    return len(empty_columns)
+
+
+def cyclic_shift_image(img):
+    img_array = np.array(img)
+    empty_columns = find_empty_columns(img_array)
+
+    if empty_columns > 0:
+        shift = np.random.randint(empty_columns // 2, empty_columns + 1) # сдвигаем по околонулевым столбцам
+        shifted_img_array = np.roll(img_array, shift, axis=1)
+        return Image.fromarray(shifted_img_array)
+    else:
+        return img
+
+def apply_random_transform(img):
+    transform_list = [
+        transforms.ColorJitter(brightness=0.1, contrast=0.1),
+        transforms.RandomAdjustSharpness(sharpness_factor=2, p=1.0),
+        transforms.RandomAutocontrast(p=1.0),
+        transforms.RandomEqualize(p=1.0),
+        transforms.RandomPosterize(bits=4, p=1.0),
+        transforms.RandomSolarize(threshold=128, p=1.0),
+        transforms.GaussianBlur(kernel_size=3)
+    ]
+    transform = random.choice(transform_list)
+    return transform(img)
+
+
+
+def adjust_color_balance(img):
+    img_array = np.array(img)
+    for i in range(3):  # Для каждого канала (R, G, B)
+        img_array[:, :, i] = np.clip(img_array[:, :, i] * random.uniform(0.9, 1.1), 0, 255)
+    return Image.fromarray(img_array)
 
 
 def dynamic_collate_fn(batch):
@@ -87,13 +123,27 @@ def dynamic_collate_fn(batch):
 
     images, targets, img_paths = zip(*batch)
 
-    max_height = max(img.size[1] for img in images)
-    max_width = max(img.size[0] for img in images)
+    num_images = len(images)
+    num_to_augment = num_images // 2
+    indices_to_augment = random.sample(range(num_images), num_to_augment)
+
+    augmented_images = []
+    for i, img in enumerate(images):
+        if i in indices_to_augment:
+            if random.random() < 0.5:
+                augmented_images.append(cyclic_shift_image(img))
+            else:
+                augmented_images.append(apply_random_transform(img))
+        else:
+            augmented_images.append(img)
+
+    max_height = max(img.size[1] for img in augmented_images)
+    max_width = max(img.size[0] for img in augmented_images)
 
     if max_width / max_height > 4.0:
         max_width = int(max_height * 4.0)
 
-    images = [pad_and_transform(img, max_width, max_height) for img in images]
+    images = [pad_and_transform(img, max_width, max_height) for img in augmented_images]
     images = torch.stack(images, 0)
 
     targets = torch.nn.utils.rnn.pad_sequence(targets, batch_first=True, padding_value=0)
@@ -108,24 +158,37 @@ def pad_and_transform(image, target_width, target_height):
     return transforms.ToTensor()(padded_image)
 
 
-def test_loader():
-
-    dataset = DataGen(
-        data_base_dir='/Users/semencinman/Documents/GitHub/ImgToLatex/samples/images/formula_images_processed',
-        data_path='/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_train_filter.lst',
-        label_path='/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_formulas.tok.lst'
-    )
-
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, collate_fn=dynamic_collate_fn)
-
-    for images, targets, img_paths in dataloader:
-        print("Batch loaded with image paths and annotations:")
-        for img_path, target in zip(img_paths, targets):
-            annotation = ''.join([chr(idx) if idx > 2 else '' for idx in target.tolist()])
-            print(f"Image path: {img_path}, Annotation: {annotation}")
-        break
-
-if __name__ == "__main__":
-    test_loader()
+# def test_augmentation():
+#     img_path = "/Users/semencinman/Downloads/IM2LATEX-100K/formula_images_processed/formula_images_processed/1a0a5ac59d.png"  # Укажите путь к тестовому изображению
+#     img = Image.open(img_path)
+#     fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+#     axes[0, 0].imshow(img, cmap='gray')
+#     axes[0, 0].set_title("Original Image")
+#     axes[0, 0].axis('off')
+#     shifted_img = cyclic_shift_image(img)
+#     axes[0, 1].imshow(shifted_img, cmap='gray')
+#     axes[0, 1].set_title("Cyclic Shift")
+#     axes[0, 1].axis('off')
+#     filtered_img = apply_random_transform(img)
+#     axes[1, 0].imshow(filtered_img, cmap='gray')
+#     axes[1, 0].set_title("Random Filter")
+#     axes[1, 0].axis('off')
+#     plt.show()
 
 
+# def test_loader():
+#
+#     dataset = DataGen(
+#         data_base_dir='/Users/semencinman/Documents/GitHub/ImgToLatex/samples/images/formula_images_processed',
+#         data_path='/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_train_filter.lst',
+#         label_path='/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_formulas.tok.lst'
+#     )
+#
+#     dataloader = DataLoader(dataset, batch_size=16, shuffle=True, collate_fn=dynamic_collate_fn)
+#
+#     for images, targets, img_paths in dataloader:
+#         print("Batch loaded with image paths and annotations:")
+#         for img_path, target in zip(img_paths, targets):
+#             annotation = ''.join([chr(idx) if idx > 2 else '' for idx in target.tolist()])
+#             print(f"Image path: {img_path}, Annotation: {annotation}")
+#         break
