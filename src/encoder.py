@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 class PositionalEncoding2D(nn.Module):
-    def __init__(self, d_model, height=128, width=128):
+    def __init__(self, d_model, height=256, width=256):
         super().__init__()
         self.pos_height = nn.Embedding(height, d_model)
         self.pos_width = nn.Embedding(width, d_model)

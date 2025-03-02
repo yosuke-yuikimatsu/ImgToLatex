@@ -8,8 +8,7 @@ class ImageToLatexModel(nn.Module):
     def __init__(
         self,
         vocab_size: int,
-        embed_dim: int = 1024,
-        enc_hidden_dim: int = 2152,
+        enc_hidden_dim: int = 2048,
         pad_idx: int = 0,
         sos_index: int = 1,
         eos_index: int = 2,
@@ -20,7 +19,7 @@ class ImageToLatexModel(nn.Module):
         self.encoder = TransformerEncoderModule(enc_hid_dim=enc_hidden_dim, num_layers=24, ffn_dim=8192)
         self.decoder = TransformerDecoderModule(
             vocab_size=vocab_size,
-            embed_dim=embed_dim,
+            embed_dim=enc_hidden_dim,
             num_heads=16,
             num_layers=12,
             ffn_dim=8192,

@@ -38,14 +38,14 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-4
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 30
+MAX_LENGTH = 40
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
@@ -104,7 +104,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
             for i in range(len(images)):
                 ref_tokens = targets[i, 1:].tolist()  # Удаляем SOS из целевой последовательности
-                cand_tokens = generated_tokens[i].tolist()  # Предсказанные токены уже обрезаны по EOS
+                cand_tokens = generated_tokens[i][1:].tolist()  # Предсказанные токены уже обрезаны по EOS
 
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
@@ -140,7 +140,8 @@ def main():
     train_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
         data_path=TRAIN_DATA_PATH,
-        label_path=TRAIN_LABEL_PATH
+        label_path=TRAIN_LABEL_PATH,
+        max_decoder_l=MAX_LENGTH
     )
     train_loader = DataLoader(
         train_dataset,
@@ -154,7 +155,8 @@ def main():
     val_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
         data_path=VAL_DATA_PATH,
-        label_path=VAL_LABEL_PATH
+        label_path=VAL_LABEL_PATH,
+        max_decoder_l=MAX_LENGTH
     )
     val_loader = DataLoader(
         val_dataset,
@@ -169,8 +171,7 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        embed_dim=1024,
-        enc_hidden_dim=2152,  # Соответствует выходу CNN
+        enc_hidden_dim=2176,  # Должно быть кратно количеству голов в энкодере
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
@@ -185,6 +186,9 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total parameters: {total_params}")
+
     # Учительское принуждение не используется в трансформерной модели
     # START_TEACHER_FORCING и END_TEACHER_FORCING убраны
 
@@ -198,7 +202,7 @@ def main():
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
+        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE,weights_only=True))
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
