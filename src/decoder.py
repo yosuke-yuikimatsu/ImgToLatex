@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import TransformerDecoder, TransformerDecoderLayer
 
 class TransformerDecoderModule(nn.Module):
-    def __init__(self, vocab_size, embed_dim=2176, num_heads=16, num_layers=12, ffn_dim=8192, max_length=300, sos_index=1, eos_index=2):
+    def __init__(self, vocab_size, embed_dim=2176 , num_heads=16, num_layers=12, ffn_dim=8192, max_length=300, sos_index=1, eos_index=2):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.pos_encoding = nn.Embedding(max_length, embed_dim)
@@ -22,7 +22,7 @@ class TransformerDecoderModule(nn.Module):
         if tgt_tokens is not None:
             # Режим обучения: полная последовательность предоставлена
             B, T = tgt_tokens.shape
-            tgt_emb = self.embedding(tgt_tokens) + self.pos_encoding(torch.arange(T, device=device))
+            tgt_emb = self.embedding(tgt_tokens[:,:-1]) + self.pos_encoding(torch.arange(T - 1, device=device))
             output = self.transformer_decoder(tgt_emb, memory)
             logits = self.output_layer(output)  # (B, T, vocab_size)
             return logits

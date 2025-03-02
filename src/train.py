@@ -63,8 +63,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
             logits = model(images, tgt_tokens=targets)
             # Учитываем сдвиг: предсказываем токены начиная с позиции 1
             loss = criterion(
-                logits.view(-1, VOCAB_SIZE),  # (B * T, vocab_size)
-                targets[:, 1:].contiguous().view(-1)  # (B * T)
+                logits.view(-1, VOCAB_SIZE),  # (B * T - 1, vocab_size)
+                targets[:, 1:].contiguous().view(-1)  # (B * T - 1)
             )
 
         scaler.scale(loss).backward()
