@@ -38,7 +38,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 10
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-5
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
