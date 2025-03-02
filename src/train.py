@@ -29,7 +29,7 @@ VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/content/drive/MyDrive/params")
+PARAMS_DIR = Path("/content/drive/MyDrive/params_new_model")
 os.makedirs(PARAMS_DIR, exist_ok=True)
 
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
