@@ -13,7 +13,7 @@ from metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
 
-def indices_to_latex(sequence) :
+def indices_to_latex(sequence):
     annotation = ''.join([chr(idx) if idx > 2 else '' for idx in sequence])
     return annotation
 
@@ -32,27 +32,23 @@ VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 PARAMS_DIR = Path("/content/drive/MyDrive/params")
 os.makedirs(PARAMS_DIR, exist_ok=True)
 
-# Можно также сохранить финальный вариант модели локально (опционально)
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 6
+BATCH_SIZE = 20
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-4
-START_TEACHER_FORCING = 0.7
-END_TEACHER_FORCING = 0.2
+LEARNING_RATE = 1e-5
 
-# Размер словаря и специальные токены
+# Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
 PAD_IDX = 0
-SOS_IDX = 129
-EOS_IDX = 130
+SOS_IDX = 1
+EOS_IDX = 2
 MAX_LENGTH = 30
 
-
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
-def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teacher_forcing_ratio=0.5):
+def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
     model.train()
     total_loss = 0.0
 
@@ -62,19 +58,13 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 
         optimizer.zero_grad()
 
-        # Применяем Mixed Precision
         with autocast(device_type=str(DEVICE)):
-            logits, alphas = model(
-                images,
-                tgt_tokens=targets,
-                teacher_forcing_ratio=teacher_forcing_ratio
-            )
-
-            B, T = targets.shape
-            vocab_size = logits.size(-1)
+            # В режиме обучения передаём targets, получаем только логиты
+            logits = model(images, tgt_tokens=targets)
+            # Учитываем сдвиг: предсказываем токены начиная с позиции 1
             loss = criterion(
-                logits.view(-1, vocab_size),
-                targets[:, 1:].contiguous().view(-1)
+                logits.view(-1, VOCAB_SIZE),  # (B * T, vocab_size)
+                targets[:, 1:].contiguous().view(-1)  # (B * T)
             )
 
         scaler.scale(loss).backward()
@@ -83,56 +73,55 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 
         total_loss += loss.item()
 
-        # Печать каждые 50 итераций
         if (step + 1) % 50 == 0:
             print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.4f}")
 
-        # Явно очищаем память
-        del images, targets, logits, alphas, loss
+        del images, targets, logits, loss
         torch.cuda.empty_cache()
 
     avg_loss = total_loss / len(dataloader)
     return avg_loss
-
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     model.eval()
     all_bleu = []
     batches_processed = 0
-    bleu_score = None
 
     with torch.no_grad():
         for images, targets, img_paths in dataloader:
             images = images.to(DEVICE)
+            targets = targets.to(DEVICE)
 
             with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
                           device_type=str(DEVICE)):
-                generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
+                # В режиме инференса получаем логиты и токены
+                logits, generated_tokens = model(images, tgt_tokens=None)
 
-            generated_tokens = generated_tokens.cpu()
+            # Переносим на CPU для вычислений
             targets = targets.cpu()
+            # generated_tokens — это список переменной длины, каждый элемент — тензор
 
             for i in range(len(images)):
-                # Для вычисления BLEU удаляем первый токен (SOS) из референсной последовательности
-                ref_tokens = targets[i].tolist()[1:]
-                cand_tokens = generated_tokens[i].tolist()
+                ref_tokens = targets[i, 1:].tolist()  # Удаляем SOS из целевой последовательности
+                cand_tokens = generated_tokens[i].tolist()  # Предсказанные токены уже обрезаны по EOS
 
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
                     all_bleu.append(bleu_score)
                 else:
                     print("BLEU вычисление отключено.")
+                    bleu_score = None
 
-                real_str = indices_to_latex(targets[i].tolist())
-                pred_str = indices_to_latex(generated_tokens[i].tolist())
+                real_str = indices_to_latex(ref_tokens)
+                pred_str = indices_to_latex(cand_tokens)
                 print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
                 print(f"  Real : {real_str}")
                 print(f"  Pred : {pred_str}")
-                print(f"BLEU : {bleu_score:.2f}")
+                print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
 
-            del images, targets, generated_tokens, alphas_all
+            del images, targets, logits, generated_tokens
             torch.cuda.empty_cache()
 
             batches_processed += 1
@@ -144,7 +133,6 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
         print(f"Average BLEU: {avg_bleu:.2f}")
     elif compute_bleu_metric:
         print("No BLEU scores computed.")
-
 
 # -------------------- MAIN --------------------- #
 def main():
@@ -160,7 +148,7 @@ def main():
         shuffle=True,
         collate_fn=dynamic_collate_fn,
         drop_last=True,
-        num_workers=4
+        num_workers=2
     )
 
     val_dataset = DataGen(
@@ -171,19 +159,18 @@ def main():
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=False,
-        collate_fn=dynamic_collate_fn,  
+        shuffle=True,
+        collate_fn=dynamic_collate_fn,
         drop_last=False,
-        num_workers=4
+        num_workers=2
     )
 
     print("Device:", DEVICE)
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        embed_dim=256,
-        enc_hidden_dim=256,
-        dec_hidden_dim=512,
+        embed_dim=1024,
+        enc_hidden_dim=2152,  # Соответствует выходу CNN
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
@@ -198,18 +185,15 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
-    # Schedule для teacher forcing: линейно уменьшаем от START до END за NUM_EPOCHS
-    teacher_forcing_schedule = torch.linspace(START_TEACHER_FORCING, END_TEACHER_FORCING, steps=NUM_EPOCHS).tolist()
+    # Учительское принуждение не используется в трансформерной модели
+    # START_TEACHER_FORCING и END_TEACHER_FORCING убраны
 
-    # ---------------- ВОССТАНОВЛЕНИЕ ПОСЛЕДНЕЙ КОНТРОЛЬНОЙ ТОЧКИ ----------------
-    # Ищем файлы чекпоинтов в папке PARAMS_DIR с именами вида model_epoch_{epoch}.pth
+    # Восстановление последней контрольной точки
     checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
-            # Ожидается формат имени: model_epoch_{epoch}.pth
             return int(checkpoint_path.stem.split("_")[-1])
 
-        # Сортируем по номеру эпохи
         checkpoint_files.sort(key=extract_epoch)
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
@@ -220,11 +204,10 @@ def main():
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
         start_epoch = 1
 
-    # ----------------- ОБУЧЕНИЕ ----------------- #
+    # Обучение
     predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
-        tf_ratio = teacher_forcing_schedule[epoch - 1]  # индексируем с 0
-        print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} ===")
+        print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
         avg_loss = train_one_epoch(
             model,
@@ -232,27 +215,20 @@ def main():
             criterion,
             optimizer,
             scaler,
-            epoch,
-            teacher_forcing_ratio=tf_ratio
+            epoch
         )
 
         print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}")
-
-        # Небольшой predict
         print("--- Пример инференса (1 батч) ---")
         predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
 
-        # Сохраняем чекпоинт после каждой эпохи
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
         torch.save(model.state_dict(), checkpoint_path)
         print(f"Чекпоинт сохранён: {checkpoint_path}")
 
     print("Training done!")
-
-    # Опционально: сохраняем финальную модель локально
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved to {MODEL_SAVE_PATH}")
-
 
 if __name__ == "__main__":
     main()
