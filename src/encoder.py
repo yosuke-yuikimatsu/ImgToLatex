@@ -16,7 +16,7 @@ class PositionalEncoding2D(nn.Module):
         return x + pos_enc.unsqueeze(0).repeat(B, 1, 1, 1)
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, enc_hid_dim=1024, num_heads=16, num_layers=24, ffn_dim=8192, height=128, width=128):
+    def __init__(self, enc_hid_dim=1024, num_heads=16, num_layers=24, ffn_dim=8192, height=256, width=256):
         super().__init__()
         self.enc_hid_dim = enc_hid_dim
         self.positional_encoding = PositionalEncoding2D(enc_hid_dim, height, width)

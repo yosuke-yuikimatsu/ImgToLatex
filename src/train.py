@@ -14,7 +14,7 @@ from metrics.bleu_score import compute_bleu
 from torch.amp import autocast, GradScaler
 
 def indices_to_latex(sequence):
-    annotation = ''.join([chr(idx) if idx > 2 else '' for idx in sequence])
+    annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
     return annotation
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
@@ -36,9 +36,10 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-5
+BEAM_WIDTH = 5
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
@@ -107,8 +108,8 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
             # generated_tokens — это список переменной длины, каждый элемент — тензор
 
             for i in range(len(images)):
-                ref_tokens = targets[i, 1:].tolist()  # Удаляем SOS из целевой последовательности
-                cand_tokens = generated_tokens[i][1:].tolist()  # Предсказанные токены уже обрезаны по EOS
+                ref_tokens = indices_to_latex(targets[i, 1:].tolist())  # Удаляем SOS из целевой последовательности
+                cand_tokens = indices_to_latex(generated_tokens[i][1:].tolist())  # Предсказанные токены уже обрезаны по EOS
 
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
@@ -117,12 +118,10 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                     print("BLEU вычисление отключено.")
                     bleu_score = None
 
-                real_str = indices_to_latex(ref_tokens)
-                pred_str = indices_to_latex(cand_tokens)
                 print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
-                print(f"  Real : {real_str}")
-                print(f"  Pred : {pred_str}")
+                print(f"  Real : {''.join(ref_tokens)}")
+                print(f"  Pred : {''.join(cand_tokens)}")
                 print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
 
             del images, targets, logits, generated_tokens
@@ -175,11 +174,12 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=2172,  # Должно быть кратно количеству голов в энкодере
+        enc_hidden_dim=1536,  # Должно быть кратно количеству голов в энкодере
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
-        max_length=MAX_LENGTH
+        max_length=MAX_LENGTH,
+        beam_width = BEAM_WIDTH
     ).to(DEVICE)
 
     if torch.cuda.device_count() > 1:
