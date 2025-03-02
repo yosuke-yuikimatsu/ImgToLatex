@@ -18,7 +18,7 @@ class PositionalEncoding2D(nn.Module):
 
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, enc_hid_dim = 2176, num_heads = 16, num_layers= 24, ffn_dim = 8192, height = 256, width = 256):
+    def __init__(self, enc_hid_dim = 2176, num_heads = 16, num_layers= 12, ffn_dim = 2048, height = 256, width = 256):
         super().__init__()
         self.positional_encoding = PositionalEncoding2D(enc_hid_dim, height, width)
         self.transformer_encoder = nn.ModuleList([TransformerEncoderLayer(d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim, batch_first=True) for _ in range(num_layers)])

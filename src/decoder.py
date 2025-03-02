@@ -4,7 +4,7 @@ from torch.nn import TransformerDecoder, TransformerDecoderLayer
 from torch.utils.checkpoint import checkpoint
 
 class TransformerDecoderModule(nn.Module):
-    def __init__(self, vocab_size, embed_dim=2176, num_heads=16, num_layers=12, ffn_dim=8192, max_length=300, sos_index=1, eos_index=2):
+    def __init__(self, vocab_size, embed_dim=2176, num_heads=16, num_layers=8, ffn_dim=2048, max_length=300, sos_index=1, eos_index=2):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.pos_encoding = nn.Embedding(max_length, embed_dim)

@@ -8,7 +8,7 @@ class ImageToLatexModel(nn.Module):
     def __init__(
         self,
         vocab_size: int,
-        enc_hidden_dim: int = 2176,
+        enc_hidden_dim: int = 1920,
         pad_idx: int = 0,
         sos_index: int = 1,
         eos_index: int = 2,
@@ -16,13 +16,13 @@ class ImageToLatexModel(nn.Module):
     ):
         super().__init__()
         self.cnn = CNN(output_channels=enc_hidden_dim)
-        self.encoder = TransformerEncoderModule(enc_hid_dim=enc_hidden_dim, num_layers=24, ffn_dim=8192)
+        self.encoder = TransformerEncoderModule(enc_hid_dim=enc_hidden_dim, num_layers=16, ffn_dim=2048)
         self.decoder = TransformerDecoderModule(
             vocab_size=vocab_size,
             embed_dim=enc_hidden_dim,
             num_heads=16,
             num_layers=12,
-            ffn_dim=8192,
+            ffn_dim=2048,
             max_length=max_length,
             sos_index=sos_index,
             eos_index=eos_index

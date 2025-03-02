@@ -171,7 +171,7 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=2176,  # Должно быть кратно количеству голов в энкодере
+        enc_hidden_dim=1920,  # Должно быть кратно количеству голов в энкодере
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
