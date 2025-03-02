@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from torch.utils.checkpoint import checkpoint
 
 class PositionalEncoding2D(nn.Module):
     def __init__(self, d_model, height=256, width=256):
@@ -16,25 +15,21 @@ class PositionalEncoding2D(nn.Module):
         pos_enc = self.pos_height(h_pos) + self.pos_width(w_pos)
         return x + pos_enc.unsqueeze(0).repeat(B, 1, 1, 1)
 
-
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, enc_hid_dim = 2176, num_heads = 16, num_layers= 12, ffn_dim = 2048, height = 256, width = 256):
+    def __init__(self, enc_hid_dim=1024, num_heads=16, num_layers=24, ffn_dim=8192, height=128, width=128):
         super().__init__()
+        self.enc_hid_dim = enc_hid_dim
         self.positional_encoding = PositionalEncoding2D(enc_hid_dim, height, width)
-        self.transformer_encoder = nn.ModuleList([TransformerEncoderLayer(d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim, batch_first=True) for _ in range(num_layers)])
+        encoder_layer = TransformerEncoderLayer(
+            d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim, batch_first=True
+        )
+        self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, x):
         B, H, W, D = x.shape
-        x = self.positional_encoding(x)
-        x_flat = x.view(B, H * W, D)
-        num_segments = 4
-        segment_size = len(self.transformer_encoder) // num_segments
-        for i in range(0, len(self.transformer_encoder), segment_size):
-            x_flat = checkpoint(self._forward_segment, x_flat, i, segment_size,use_reentrant=False)
-        x_out = x_flat.view(B, H, W, D)
+        x = self.positional_encoding(x)  # Добавляем 2D позиционные эмбеддинги
+        x_flat = x.view(B, H * W, D)  # Преобразуем в плоский формат для трансформера
+        # Убрали checkpoint, используем прямой проход
+        x_enc = self.transformer_encoder(x_flat)
+        x_out = x_enc.view(B, H, W, D)  # Возвращаем исходную форму
         return x_out
-
-    def _forward_segment(self, x, start, segment_size):
-        for i in range(start, start + segment_size):
-            x = self.transformer_encoder[i](x)
-        return x
