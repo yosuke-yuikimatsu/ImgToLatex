@@ -38,14 +38,14 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 32
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-4
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 40
+MAX_LENGTH = 50
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
@@ -73,7 +73,11 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
 
         total_loss += loss.item()
 
-        if (step + 1) % 50 == 0:
+        if (step + 1) % 100 == 0:
+            pred_tokens = torch.argmax(logits, dim=-1)  # (B, T)
+
+            gen_sequence = indices_to_latex(pred_tokens[0,:].tolist())
+            print("Generated sequence:", gen_sequence)
             print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.4f}")
 
         del images, targets, logits, loss
@@ -171,7 +175,7 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=1920,  # Должно быть кратно количеству голов в энкодере
+        enc_hidden_dim=2172,  # Должно быть кратно количеству голов в энкодере
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
