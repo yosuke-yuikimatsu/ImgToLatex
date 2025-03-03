@@ -38,17 +38,17 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 16
+BATCH_SIZE = 20
 NUM_EPOCHS = 100
-LEARNING_RATE = 2e-6
-BEAM_WIDTH = 5
+LEARNING_RATE = 1e-5
+BEAM_WIDTH = 8
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 50
+MAX_LENGTH = 100
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
@@ -192,7 +192,7 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=1536,  # Должно быть кратно количеству голов в энкодере
+        enc_hidden_dim=2172,  # Должно быть кратно количеству голов в энкодере
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
