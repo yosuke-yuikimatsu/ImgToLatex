@@ -27,6 +27,8 @@ TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
 TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
+TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
+TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
 PARAMS_DIR = Path("/content/drive/MyDrive/params_new_model")
@@ -38,7 +40,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 2e-6
 BEAM_WIDTH = 5
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
@@ -170,6 +172,22 @@ def main():
         num_workers=2
     )
 
+    test_dataset = DataGen(
+        data_base_dir=DATA_BASE_DIR,
+        data_path=TEST_DATA_PATH,
+        label_path=TEST_LABEL_PATH,
+        max_decoder_l=MAX_LENGTH
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle = False,
+        collate_fn=dynamic_collate_fn,
+        drop_last=False,
+        num_workers=2
+    )
+
     print("Device:", DEVICE)
     print("Creating model...")
     model = ImageToLatexModel(
@@ -213,7 +231,7 @@ def main():
         start_epoch = 1
 
     # Обучение
-    predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
+    predict(model, test_loader, num_batches=10000, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
