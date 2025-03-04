@@ -231,7 +231,7 @@ def main():
         start_epoch = 1
 
     # Обучение
-    predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
+    #predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
