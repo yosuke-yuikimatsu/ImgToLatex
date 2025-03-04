@@ -5,7 +5,7 @@ import timm
 class CNN(nn.Module):
     def __init__(self, output_channels=1536):
         super().__init__()
-        self.convnext = timm.create_model('convnext_large.fb_in22k', pretrained=True, num_classes=0)
+        self.convnext = timm.create_model('convnext_large.fb_in22k', pretrained=False, num_classes=0)
         self.conv_reduction = nn.Conv2d(1536, output_channels, kernel_size=1)  # ConvNeXt Large выдает 1536 каналов
         self.output_channels = output_channels
 
