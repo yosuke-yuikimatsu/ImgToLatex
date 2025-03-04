@@ -38,10 +38,10 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
-BEAM_WIDTH = 8
+LEARNING_RATE = 2e-5
+BEAM_WIDTH = 4
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
 VOCAB_SIZE = 131
