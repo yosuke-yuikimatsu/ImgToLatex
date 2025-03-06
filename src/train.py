@@ -40,7 +40,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 32
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
@@ -81,7 +81,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
 
             gen_sequence = indices_to_latex(pred_tokens[0,:].tolist())
             print("Generated sequence:", gen_sequence)
-            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.4f}")
+            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
 
         del images, targets, logits, loss
         torch.cuda.empty_cache()
@@ -244,7 +244,7 @@ def main():
             epoch
         )
 
-        print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}")
+        print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.8f}")
         print("--- Пример инференса (1 батч) ---")
         predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
 
