@@ -208,9 +208,9 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
-    total_params = sum(p.numel() for p in model.parameters())
+    """ total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params}")
-
+    """
     # Учительское принуждение не используется в трансформерной модели
     # START_TEACHER_FORCING и END_TEACHER_FORCING убраны
 
