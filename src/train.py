@@ -3,23 +3,24 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
-
 from torch.utils.data import DataLoader
 from pathlib import Path
-
 from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
-
 from torch.amp import autocast, GradScaler
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+NUM_GPUS = torch.cuda.device_count()
+print(f"Device: {DEVICE}, Number of GPUs: {NUM_GPUS}")
 
 def indices_to_latex(sequence):
     annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
     return annotation
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 SAMPLES_DIR = Path.cwd() / "samples"
 DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
@@ -29,21 +30,18 @@ VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
 TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
-# Пути для чекпоинтов
-CHECKPOINT_DIR = Path("/kaggle/input/imagetolatex/pytorch/default/1")  # Путь к предобученному .pth
-OUTPUT_DIR = Path("/kaggle/working/")  # Путь для сохранения новых .pth
+CHECKPOINT_DIR = Path("/kaggle/input/model-params")
+OUTPUT_DIR = Path("/kaggle/working/")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
-# Гиперпараметры
 BATCH_SIZE = 2
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
 RL_START_EPOCH = 80
 
-# Размер словаря и специальные токены
 VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
@@ -61,7 +59,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
 
         optimizer.zero_grad()
 
-        with autocast(device_type=str(DEVICE)):
+        with autocast(device_type="cuda" if DEVICE.type == "cuda" else "cpu"):
             logits = model(images, tgt_tokens=targets)
             loss = criterion(
                 logits.view(-1, VOCAB_SIZE),
@@ -80,6 +78,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
             print("Generated sequence:", gen_sequence)
             print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
 
+        # Очистка памяти
         del images, targets, logits, loss
         torch.cuda.empty_cache()
 
@@ -98,7 +97,7 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
 
         optimizer.zero_grad()
 
-        with autocast(device_type=str(DEVICE)):
+        with autocast(device_type="cuda" if DEVICE.type == "cuda" else "cpu"):
             predicted_tokens, rewards, loss = model(images, tgt_tokens=None, train=True)
 
         scaler.scale(loss).backward()
@@ -134,7 +133,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
             targets = targets.to(DEVICE)
 
             with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
-                          device_type=str(DEVICE)):
+                          device_type="cuda" if DEVICE.type == "cuda" else "cpu"):
                 logits, generated_tokens = model(images, tgt_tokens=None)
 
             targets = targets.cpu()
@@ -183,7 +182,8 @@ def main():
         shuffle=True,
         collate_fn=dynamic_collate_fn,
         drop_last=True,
-        num_workers=2
+        num_workers=2,
+        pin_memory=True  # Ускоряет передачу данных на GPU
     )
 
     val_dataset = DataGen(
@@ -198,7 +198,8 @@ def main():
         shuffle=True,
         collate_fn=dynamic_collate_fn,
         drop_last=False,
-        num_workers=2
+        num_workers=2,
+        pin_memory=True
     )
 
     test_dataset = DataGen(
@@ -213,10 +214,10 @@ def main():
         shuffle=False,
         collate_fn=dynamic_collate_fn,
         drop_last=False,
-        num_workers=2
+        num_workers=2,
+        pin_memory=True
     )
 
-    print("Device:", DEVICE)
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
@@ -226,15 +227,17 @@ def main():
         eos_index=EOS_IDX,
         max_length=MAX_LENGTH,
         beam_width=BEAM_WIDTH
-    ).to(DEVICE)
+    )
 
-    if torch.cuda.device_count() > 1:
-        print(f"Using {torch.cuda.device_count()} GPUs!")
-        model = nn.DataParallel(model).to(DEVICE)
+    # Перемещаем модель на GPU и используем DataParallel для двух GPU
+    model = model.to(DEVICE)
+    if NUM_GPUS > 1:
+        print(f"Using {NUM_GPUS} GPUs with DataParallel!")
+        model = nn.DataParallel(model)
 
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-    scaler = GradScaler(device=str(DEVICE))
+    scaler = GradScaler(device="cuda" if DEVICE.type == "cuda" else "cpu")
 
     # Восстановление последней контрольной точки
     checkpoint_files = list(CHECKPOINT_DIR.glob("model_epoch_*.pth"))
@@ -246,7 +249,11 @@ def main():
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE, weights_only=True))
+        state_dict = torch.load(latest_checkpoint, map_location=DEVICE, weights_only=True)
+        if NUM_GPUS > 1:
+            # Убираем префикс 'module.' из DataParallel при загрузке
+            state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
@@ -279,13 +286,20 @@ def main():
         print("--- Пример инференса (5 батчей) ---")
         predict(model, val_loader, num_batches=5, compute_bleu_metric=False)
 
-        # Сохранение чекпоинта в /kaggle/working/
+        # Сохранение чекпоинта
         checkpoint_path = OUTPUT_DIR / f"model_epoch_{epoch}.pth"
-        torch.save(model.state_dict(), checkpoint_path)
+        if NUM_GPUS > 1:
+            # Сохраняем state_dict без префикса 'module.' для совместимости
+            torch.save(model.module.state_dict(), checkpoint_path)
+        else:
+            torch.save(model.state_dict(), checkpoint_path)
         print(f"Чекпоинт сохранён: {checkpoint_path}")
 
     print("Training done!")
-    torch.save(model.state_dict(), MODEL_SAVE_PATH)
+    if NUM_GPUS > 1:
+        torch.save(model.module.state_dict(), MODEL_SAVE_PATH)
+    else:
+        torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved to {MODEL_SAVE_PATH}")
 
 if __name__ == "__main__":
