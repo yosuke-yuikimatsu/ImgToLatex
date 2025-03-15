@@ -38,6 +38,7 @@ NUM_EPOCHS = 100
 LEARNING_RATE = 1e-5
 START_TEACHER_FORCING = 0.9
 END_TEACHER_FORCING = 0.0
+BEAM_WIDTH = 5
 RL_START_EPOCH = 80 # Эпоха, с которой начинается RL-обучение
 
 # Размер словаря и специальные токены
@@ -214,12 +215,12 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        embed_dim=1024,
-        enc_hidden_dim=2048,
+        enc_hidden_dim=1536,  # Должно быть кратно количеству голов в энкодере
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
-        max_length=MAX_LENGTH
+        max_length=MAX_LENGTH,
+        beam_width = BEAM_WIDTH
     ).to(DEVICE)
 
     if torch.cuda.device_count() > 1:
