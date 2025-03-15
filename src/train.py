@@ -34,7 +34,7 @@ TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
-TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
+TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_aformulas.tok.lst"
 
 CHECKPOINT_DIR = Path("/kaggle/input/model-params")
 OUTPUT_DIR = Path("/kaggle/working/checkpoints")
@@ -51,6 +51,7 @@ PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 70
+
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
     model.train()
@@ -188,8 +189,8 @@ def main():
         pin_memory=True
     )
 
-    # Создаём модель
-    print("Creating model...")
+    # Создаём модель на CPU
+    print("Creating model on CPU...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
         enc_hidden_dim=1536,
@@ -198,9 +199,9 @@ def main():
         eos_index=EOS_IDX,
         max_length=MAX_LENGTH,
         beam_width=BEAM_WIDTH
-    ).to(DEVICE)
+    )
 
-    # Загрузка чекпоинта
+    # Загрузка чекпоинта на CPU
     checkpoint_files = list(CHECKPOINT_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
@@ -209,7 +210,7 @@ def main():
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        state_dict = torch.load(latest_checkpoint, map_location=DEVICE, weights_only=True)
+        state_dict = torch.load(latest_checkpoint, map_location='cpu', weights_only=True)
         try:
             model.load_state_dict(state_dict)
         except RuntimeError as e:
@@ -224,7 +225,16 @@ def main():
     # Используем DataParallel, если доступно несколько GPU
     if NUM_GPUS > 1:
         print(f"Using {NUM_GPUS} GPUs with DataParallel!")
-        model = nn.DataParallel(model)
+        model = nn.DataParallel(model, device_ids=[0, 1])  # Явно указываем GPU 0 и 1
+
+    # Переносим модель на GPU после обёртывания
+    model = model.to(DEVICE)
+
+    # Проверка устройств
+    print(f"Устройство модели: {next(model.parameters()).device}")
+    for i, (images, targets, _) in enumerate(train_loader):
+        print(f"Устройство данных: {images.device}, {targets.device}")
+        break
 
     # Проверка памяти GPU после инициализации модели
     for i in range(NUM_GPUS):
