@@ -2,11 +2,9 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from pathlib import Path
-from torch.cuda.amp import autocast, GradScaler
-
+from torch.amp import autocast, GradScaler  # Используем новый API
 from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
@@ -17,7 +15,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_GPUS = torch.cuda.device_count()
 print(f"Device: {DEVICE}, Number of GPUs: {NUM_GPUS}")
 
+# Вывод версий PyTorch и CUDA для диагностики
+print(f"PyTorch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA version: {torch.version.cuda}")
+
 def indices_to_latex(sequence):
+    """Преобразование индексов в LaTeX-последовательность"""
     annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
     return annotation
 
@@ -31,7 +36,7 @@ VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
 TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
-CHECKPOINT_DIR = Path("/kaggle/input/model-params")  # Ваш путь к чекпоинту
+CHECKPOINT_DIR = Path("/kaggle/input/model-params")  # Путь к чекпоинтам
 OUTPUT_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
@@ -46,6 +51,12 @@ PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 70
+
+# Проверка существования всех путей
+for path in [SAMPLES_DIR, DATA_BASE_DIR, TRAIN_DATA_PATH, TRAIN_LABEL_PATH,
+             VAL_DATA_PATH, VAL_LABEL_PATH, TEST_DATA_PATH, TEST_LABEL_PATH, CHECKPOINT_DIR]:
+    if not path.exists():
+        print(f"Внимание: путь {path} не существует")
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
@@ -143,6 +154,18 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
 # -------------------- MAIN --------------------- #
 def main():
+    # Проверка путей
+    print(f"Проверка путей:")
+    print(f" - SAMPLES_DIR: {SAMPLES_DIR} exists: {SAMPLES_DIR.exists()}")
+    print(f" - DATA_BASE_DIR: {DATA_BASE_DIR} exists: {DATA_BASE_DIR.exists()}")
+    print(f" - TRAIN_DATA_PATH: {TRAIN_DATA_PATH} exists: {TRAIN_DATA_PATH.exists()}")
+    print(f" - TRAIN_LABEL_PATH: {TRAIN_LABEL_PATH} exists: {TRAIN_LABEL_PATH.exists()}")
+    print(f" - VAL_DATA_PATH: {VAL_DATA_PATH} exists: {VAL_DATA_PATH.exists()}")
+    print(f" - VAL_LABEL_PATH: {VAL_LABEL_PATH} exists: {VAL_LABEL_PATH.exists()}")
+    print(f" - TEST_DATA_PATH: {TEST_DATA_PATH} exists: {TEST_DATA_PATH.exists()}")
+    print(f" - TEST_LABEL_PATH: {TEST_LABEL_PATH} exists: {TEST_LABEL_PATH.exists()}")
+    print(f" - CHECKPOINT_DIR: {CHECKPOINT_DIR} exists: {CHECKPOINT_DIR.exists()}")
+
     # Создаём датасеты
     train_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
@@ -190,7 +213,7 @@ def main():
         pin_memory=True
     )
 
-    # Создаём модель без DataParallel
+    # Создаём модель
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
@@ -212,20 +235,24 @@ def main():
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
         state_dict = torch.load(latest_checkpoint, map_location=DEVICE, weights_only=True)
-        model.load_state_dict(state_dict)  # Загружаем веса до DataParallel
+        try:
+            model.load_state_dict(state_dict)
+        except RuntimeError as e:
+            print(f"Ошибка загрузки state_dict: {e}")
+            raise
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
         start_epoch = 1
 
-    # Оборачиваем модель в DataParallel после загрузки весов
+    # Используем DataParallel, если доступно несколько GPU
     if NUM_GPUS > 1:
         print(f"Using {NUM_GPUS} GPUs with DataParallel!")
         model = nn.DataParallel(model)
 
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-    scaler = GradScaler(device="cuda" if DEVICE.type == "cuda" else "cpu")
+    scaler = GradScaler()  # Исправлено: без параметра device
 
     # Обучение
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
@@ -244,7 +271,7 @@ def main():
         # Сохранение чекпоинта
         checkpoint_path = OUTPUT_DIR / f"model_epoch_{epoch}.pth"
         if NUM_GPUS > 1:
-            torch.save(model.module.state_dict(), checkpoint_path)  # Сохраняем без префикса module.
+            torch.save(model.module.state_dict(), checkpoint_path)
         else:
             torch.save(model.state_dict(), checkpoint_path)
         print(f"Чекпоинт сохранён: {checkpoint_path}")
