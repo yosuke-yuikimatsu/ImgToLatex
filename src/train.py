@@ -20,7 +20,6 @@ def indices_to_latex(sequence):
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Пути к данным
 SAMPLES_DIR = Path.cwd() / ".." / "samples"
 DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
@@ -30,21 +29,21 @@ VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
 TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
-# ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/content/drive/MyDrive/params_new_model")
-os.makedirs(PARAMS_DIR, exist_ok=True)
+# Пути для чекпоинтов
+CHECKPOINT_DIR = Path("/kaggle/input/imagetolatex/pytorch/default/1")  # Путь к предобученному .pth
+OUTPUT_DIR = Path("/kaggle/working/")  # Путь для сохранения новых .pth
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
-os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
+MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
 # Гиперпараметры
 BATCH_SIZE = 2
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
-RL_START_EPOCH = 80  # Эпоха, с которой начинается RL-обучение
+RL_START_EPOCH = 80
 
-# Размер словаря и специальные токены (обновлены для соответствия вашей модели)
+# Размер словаря и специальные токены
 VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
@@ -63,12 +62,10 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
         optimizer.zero_grad()
 
         with autocast(device_type=str(DEVICE)):
-            # В режиме обучения передаём targets, получаем только логиты
             logits = model(images, tgt_tokens=targets)
-            # Учитываем сдвиг: предсказываем токены начиная с позиции 1
             loss = criterion(
-                logits.view(-1, VOCAB_SIZE),  # (B * T - 1, vocab_size)
-                targets[:, 1:].contiguous().view(-1)  # (B * T - 1)
+                logits.view(-1, VOCAB_SIZE),
+                targets[:, 1:].contiguous().view(-1)
             )
 
         scaler.scale(loss).backward()
@@ -78,7 +75,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
         total_loss += loss.item()
 
         if (step + 1) % 500 == 0:
-            pred_tokens = torch.argmax(logits, dim=-1)  # (B, T)
+            pred_tokens = torch.argmax(logits, dim=-1)
             gen_sequence = indices_to_latex(pred_tokens[0, :].tolist())
             print("Generated sequence:", gen_sequence)
             print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
@@ -102,7 +99,6 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
         optimizer.zero_grad()
 
         with autocast(device_type=str(DEVICE)):
-            # В режиме RL передаём train=True, получаем tokens, rewards, loss
             predicted_tokens, rewards, loss = model(images, tgt_tokens=None, train=True)
 
         scaler.scale(loss).backward()
@@ -139,16 +135,12 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
             with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
                           device_type=str(DEVICE)):
-                # В режиме инференса получаем логиты и токены
                 logits, generated_tokens = model(images, tgt_tokens=None)
 
-            # Переносим на CPU для вычислений
             targets = targets.cpu()
-            # generated_tokens — это список переменной длины, каждый элемент — тензор
-
             for i in range(len(images)):
-                ref_tokens = indices_to_latex(targets[i, 1:].tolist())  # Удаляем SOS из целевой последовательности
-                cand_tokens = indices_to_latex(generated_tokens[i][1:].tolist())  # Предсказанные токены уже обрезаны по EOS
+                ref_tokens = indices_to_latex(targets[i, 1:].tolist())
+                cand_tokens = indices_to_latex(generated_tokens[i][1:].tolist())
 
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
@@ -215,7 +207,6 @@ def main():
         label_path=TEST_LABEL_PATH,
         max_decoder_l=MAX_LENGTH
     )
-
     test_loader = DataLoader(
         test_dataset,
         batch_size=BATCH_SIZE,
@@ -229,7 +220,7 @@ def main():
     print("Creating model...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=1536,  # Должно быть кратно количеству голов в энкодере
+        enc_hidden_dim=1536,
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
@@ -246,7 +237,7 @@ def main():
     scaler = GradScaler(device=str(DEVICE))
 
     # Восстановление последней контрольной точки
-    checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
+    checkpoint_files = list(CHECKPOINT_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
             return int(checkpoint_path.stem.split("_")[-1])
@@ -262,10 +253,8 @@ def main():
         start_epoch = 1
 
     # Обучение
-    # predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         if epoch < RL_START_EPOCH:
-            # Supervised обучение
             print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} (Supervised) ===")
             avg_loss = train_one_epoch(
                 model,
@@ -277,7 +266,6 @@ def main():
             )
             print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.8f}")
         else:
-            # RL обучение с REINFORCE
             print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} (REINFORCE) ===")
             avg_loss, avg_reward = train_one_epoch_rl(
                 model,
@@ -291,7 +279,8 @@ def main():
         print("--- Пример инференса (5 батчей) ---")
         predict(model, val_loader, num_batches=5, compute_bleu_metric=False)
 
-        checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
+        # Сохранение чекпоинта в /kaggle/working/
+        checkpoint_path = OUTPUT_DIR / f"model_epoch_{epoch}.pth"
         torch.save(model.state_dict(), checkpoint_path)
         print(f"Чекпоинт сохранён: {checkpoint_path}")
 
