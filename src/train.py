@@ -12,7 +12,6 @@ from metrics.bleu_score import compute_bleu
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-# Определяем устройство и количество GPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_GPUS = torch.cuda.device_count()
 print(f"Device: {DEVICE}, Number of GPUs: {NUM_GPUS}")
@@ -42,7 +41,7 @@ OUTPUT_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
-BATCH_SIZE = 3
+BATCH_SIZE = 1  # Уменьшено для экономии памяти
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
@@ -52,18 +51,11 @@ PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 70
-
-for path in [SAMPLES_DIR, DATA_BASE_DIR, TRAIN_DATA_PATH, TRAIN_LABEL_PATH,
-             VAL_DATA_PATH, VAL_LABEL_PATH, TEST_DATA_PATH, TEST_LABEL_PATH, CHECKPOINT_DIR]:
-    if not path.exists():
-        print(f"Внимание: путь {path} не существует")
-
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
     model.train()
     total_loss = 0.0
     for step, (images, targets, _) in enumerate(dataloader):
-        # Данные НЕ переносятся на DEVICE, остаются на CPU до передачи в модель
         optimizer.zero_grad()
         with autocast(device_type="cuda"):
             logits = model(images, tgt_tokens=targets)
@@ -92,7 +84,6 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
     total_reward = 0.0
     num_batches = 0
     for step, (images, _, _) in enumerate(dataloader):
-        # Данные НЕ переносятся на DEVICE
         optimizer.zero_grad()
         with autocast(device_type="cuda"):
             predicted_tokens, rewards, loss = model(images, tgt_tokens=None, train=True)
@@ -120,7 +111,6 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     batches_processed = 0
     with torch.no_grad():
         for images, targets, img_paths in dataloader:
-            # Данные НЕ переносятся на DEVICE
             with autocast(device_type="cuda"):
                 logits, generated_tokens = model(images, tgt_tokens=None)
             targets = targets.cpu()
@@ -151,22 +141,6 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
 # -------------------- MAIN --------------------- #
 def main():
-    # Проверка памяти GPU перед началом
-    for i in range(NUM_GPUS):
-        print(f"GPU {i} memory summary:\n{torch.cuda.memory_summary(device=i)}")
-
-    # Проверка путей
-    print(f"Проверка путей:")
-    print(f" - SAMPLES_DIR: {SAMPLES_DIR} exists: {SAMPLES_DIR.exists()}")
-    print(f" - DATA_BASE_DIR: {DATA_BASE_DIR} exists: {DATA_BASE_DIR.exists()}")
-    print(f" - TRAIN_DATA_PATH: {TRAIN_DATA_PATH} exists: {TRAIN_DATA_PATH.exists()}")
-    print(f" - TRAIN_LABEL_PATH: {TRAIN_LABEL_PATH} exists: {TRAIN_LABEL_PATH.exists()}")
-    print(f" - VAL_DATA_PATH: {VAL_DATA_PATH} exists: {VAL_DATA_PATH.exists()}")
-    print(f" - VAL_LABEL_PATH: {VAL_LABEL_PATH} exists: {VAL_LABEL_PATH.exists()}")
-    print(f" - TEST_DATA_PATH: {TEST_DATA_PATH} exists: {TEST_DATA_PATH.exists()}")
-    print(f" - TEST_LABEL_PATH: {TEST_LABEL_PATH} exists: {TEST_LABEL_PATH.exists()}")
-    print(f" - CHECKPOINT_DIR: {CHECKPOINT_DIR} exists: {CHECKPOINT_DIR.exists()}")
-
     # Создаём датасеты
     train_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
@@ -251,6 +225,11 @@ def main():
     if NUM_GPUS > 1:
         print(f"Using {NUM_GPUS} GPUs with DataParallel!")
         model = nn.DataParallel(model)
+
+    # Проверка памяти GPU после инициализации модели
+    for i in range(NUM_GPUS):
+        print(f"GPU {i} memory allocated: {torch.cuda.memory_allocated(i) / 1024**2:.2f} MiB")
+        print(f"GPU {i} max memory allocated: {torch.cuda.max_memory_allocated(i) / 1024**2:.2f} MiB")
 
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
