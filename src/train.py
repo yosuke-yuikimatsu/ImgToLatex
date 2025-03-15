@@ -8,7 +8,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from pathlib import Path
 
-from model import ImageToLatexModel
+from model import ImageToLatexModel  # Предполагается, что Decoder с REINFORCE уже в модели
 from data.dataloader import DataGen, dynamic_collate_fn, indices_to_latex
 from metrics.bleu_score import compute_bleu
 
@@ -29,7 +29,6 @@ VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 PARAMS_DIR = Path("/content/drive/MyDrive/params_resnet")
 os.makedirs(PARAMS_DIR, exist_ok=True)
 
-# Можно также сохранить финальный вариант модели локально (опционально)
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
@@ -39,8 +38,7 @@ NUM_EPOCHS = 100
 LEARNING_RATE = 1e-5
 START_TEACHER_FORCING = 0.9
 END_TEACHER_FORCING = 0.0
-START_SL_WEIGHT = 1.0  # Начальная доля SL
-END_SL_WEIGHT = 0.0    # Конечная доля SL
+RL_START_EPOCH = 50  # Эпоха, с которой начинается RL-обучение
 
 # Размер словаря и специальные токены
 VOCAB_SIZE = 131
@@ -49,13 +47,10 @@ SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 30
 
-
-# ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
-def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teacher_forcing_ratio=0.5, sl_weight=1.0):
+# ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
+def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teacher_forcing_ratio=0.5):
     model.train()
     total_loss = 0.0
-    total_sl_loss = 0.0
-    total_rl_loss = 0.0
 
     for step, (images, targets, _) in enumerate(dataloader):
         images = images.to(DEVICE, non_blocking=True)
@@ -63,54 +58,71 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 
         optimizer.zero_grad()
 
-        # Применяем Mixed Precision
         with autocast(device_type=str(DEVICE)):
             logits, alphas = model(
                 images,
                 tgt_tokens=targets,
                 teacher_forcing_ratio=teacher_forcing_ratio
             )
+
             B, T = targets.shape
             vocab_size = logits.size(-1)
-            sl_loss = criterion(
+            loss = criterion(
                 logits.view(-1, vocab_size),
                 targets[:, 1:].contiguous().view(-1)
             )
 
-            # REINFORCE Learning (RL)
-            predicted_tokens, rewards, rl_loss = model.module._reinforce_decode(images) if isinstance(model, nn.DataParallel) else model._reinforce_decode(images)
-
-            # Комбинированная потеря
-            combined_loss = sl_weight * sl_loss + (1.0 - sl_weight) * rl_loss
-
-        scaler.scale(combined_loss).backward()
+        scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
-        total_loss += combined_loss.item()
-        total_sl_loss += sl_loss.item()
-        total_rl_loss += rl_loss.item()
+        total_loss += loss.item()
 
-        # Печать каждые 50 итераций
         if (step + 1) % 50 == 0:
-            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Combined Loss: {combined_loss.item():.8f}, "
-                  f"SL Loss: {sl_loss.item():.8f}, RL Loss: {rl_loss.item():.8f}, SL Weight: {sl_weight:.2f}")
+            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
 
-        # Явно очищаем память
-        del images, targets, logits, alphas, predicted_tokens, rewards, rl_loss, sl_loss, combined_loss
+        del images, targets, logits, alphas, loss
         torch.cuda.empty_cache()
 
     avg_loss = total_loss / len(dataloader)
-    avg_sl_loss = total_sl_loss / len(dataloader)
-    avg_rl_loss = total_rl_loss / len(dataloader)
-    return avg_loss, avg_sl_loss, avg_rl_loss
+    return avg_loss
 
+# ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (REINFORCE) ----------------- #
+def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
+    model.train()
+    total_loss = 0.0
+
+    for step, (images, _, _) in enumerate(dataloader):  
+        images = images.to(DEVICE, non_blocking=True)
+
+        optimizer.zero_grad()
+
+        with autocast(device_type=str(DEVICE)):
+            corrected_predicted_tokens, rewards, loss = model(
+                images,
+                train=True
+            )
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        total_loss += loss.item()
+
+        if (step + 1) % 50 == 0:
+            avg_reward = torch.mean(rewards).item() if rewards is not None else 0.0
+            print(f"[Epoch {epoch} RL] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}, Avg Reward: {avg_reward:.4f}")
+
+        del images, corrected_predicted_tokens, rewards, loss
+        torch.cuda.empty_cache()
+
+    avg_loss = total_loss / len(dataloader)
+    return avg_loss
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     model.eval()
     all_bleu = []
-    all_rewards = []
     batches_processed = 0
     bleu_score = None
 
@@ -120,13 +132,11 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
             with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
                           device_type=str(DEVICE)):
-                # Используем жадную декодировку для предсказаний
+                # Для инференса используем обычный forward без teacher forcing
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
-                _, rewards, _ = model.module._reinforce_decode(images, train=False) if isinstance(model, nn.DataParallel) else model._reinforce_decode(images, train=False)
 
             generated_tokens = generated_tokens.cpu()
             targets = targets.cpu()
-            rewards = rewards.cpu()
 
             for i in range(len(images)):
                 ref_tokens = targets[i].tolist()[1:]
@@ -135,22 +145,18 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
                     all_bleu.append(bleu_score)
+                else:
+                    print("BLEU вычисление отключено.")
 
-                real_str = indices_to_latex(ref_tokens)
-                pred_str = indices_to_latex(cand_tokens)
-                reward = rewards[i].item()
-                compilable = reward > 0  # Если reward = 1.0, то скомпилировалось
-                all_rewards.append(reward)
-
+                real_str = indices_to_latex(targets[i].tolist()[1:])
+                pred_str = indices_to_latex(generated_tokens[i].tolist())
                 print(f"=== Sample {i + 1} ===")
-                print(f"  Path       : {img_paths[i]}")
-                print(f"  Real       : {real_str}")
-                print(f"  Pred       : {pred_str}")
-                print(f"  BLEU       : {bleu_score:.2f}")
-                print(f"  Reward     : {reward:.2f}")
-                print(f"  Compilable : {compilable}")
+                print(f"  Path : {img_paths[i]}")
+                print(f"  Real : {real_str}")
+                print(f"  Pred : {pred_str}")
+                print(f"BLEU : {bleu_score:.2f}" if bleu_score else "BLEU: N/A")
 
-            del images, targets, generated_tokens, alphas_all, rewards
+            del images, targets, generated_tokens, alphas_all
             torch.cuda.empty_cache()
 
             batches_processed += 1
@@ -160,15 +166,10 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     if compute_bleu_metric and all_bleu:
         avg_bleu = sum(all_bleu) / len(all_bleu)
         var_bleu = np.var(all_bleu)
-        avg_reward = sum(all_rewards) / len(all_rewards)
-        var_reward = np.var(all_rewards)
         print(f"Average BLEU: {avg_bleu:.2f}")
         print(f"Variance of BLEU: {var_bleu}")
-        print(f"Average Reward: {avg_reward:.2f}")
-        print(f"Variance of Reward: {var_reward}")
     elif compute_bleu_metric:
         print("No BLEU scores computed.")
-
 
 # -------------------- MAIN --------------------- #
 def main():
@@ -223,10 +224,10 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
+    # Schedule для teacher forcing
     teacher_forcing_schedule = torch.linspace(START_TEACHER_FORCING, END_TEACHER_FORCING, steps=NUM_EPOCHS).tolist()
-    sl_weight_schedule = torch.linspace(START_SL_WEIGHT, END_SL_WEIGHT, steps=NUM_EPOCHS).tolist()
 
-    # ---------------- ВОССТАНОВЛЕНИЕ ПОСЛЕДНЕЙ КОНТРОЛЬНОЙ ТОЧКИ ----------------
+    # Восстановление последней контрольной точки
     checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
@@ -245,38 +246,44 @@ def main():
     # ----------------- ОБУЧЕНИЕ ----------------- #
     predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
-        tf_ratio = teacher_forcing_schedule[epoch - 1]
-        sl_weight = sl_weight_schedule[epoch - 1]
-        print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f}, sl_weight={sl_weight:.2f} ===")
+        if epoch < RL_START_EPOCH:
+            # Supervised обучение с teacher forcing
+            tf_ratio = teacher_forcing_schedule[epoch - 1]
+            print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} (Supervised) ===")
+            avg_loss = train_one_epoch(
+                model,
+                train_loader,
+                criterion,
+                optimizer,
+                scaler,
+                epoch,
+                teacher_forcing_ratio=tf_ratio
+            )
+        else:
+            # RL обучение с REINFORCE
+            print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} (REINFORCE) ===")
+            avg_loss = train_one_epoch_rl(
+                model,
+                train_loader,
+                optimizer,
+                scaler,
+                epoch
+            )
 
-        avg_loss, avg_sl_loss, avg_rl_loss = train_one_epoch(
-            model,
-            train_loader,
-            criterion,
-            optimizer,
-            scaler,
-            epoch,
-            teacher_forcing_ratio=tf_ratio,
-            sl_weight=sl_weight
-        )
+        print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}")
 
-        print(f"Epoch {epoch} done. Avg Combined Loss: {avg_loss:.4f}, Avg SL Loss: {avg_sl_loss:.4f}, Avg RL Loss: {avg_rl_loss:.4f}")
-
-        # Небольшой predict
+        # Пример инференса
         print("--- Пример инференса (5 батчей) ---")
         predict(model, val_loader, num_batches=5, compute_bleu_metric=True)
 
-        # Сохраняем чекпоинт после каждой эпохи
+        # Сохранение чекпоинта
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
         torch.save(model.state_dict(), checkpoint_path)
         print(f"Чекпоинт сохранён: {checkpoint_path}")
 
     print("Training done!")
-
-    # Опционально: сохраняем финальную модель локально
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved to {MODEL_SAVE_PATH}")
-
 
 if __name__ == "__main__":
     main()
