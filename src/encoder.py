@@ -2,40 +2,34 @@ import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
+class PositionalEncoding2D(nn.Module):
+    def __init__(self, d_model, height=256, width=256):
+        super().__init__()
+        self.pos_height = nn.Embedding(height, d_model)
+        self.pos_width = nn.Embedding(width, d_model)
+
+    def forward(self, x):
+        B, H, W, D = x.shape
+        h_pos = torch.arange(H, device=x.device).unsqueeze(1).repeat(1, W)
+        w_pos = torch.arange(W, device=x.device).unsqueeze(0).repeat(H, 1)
+        pos_enc = self.pos_height(h_pos) + self.pos_width(w_pos)
+        return x + pos_enc.unsqueeze(0).repeat(B, 1, 1, 1)
+
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, enc_hid_dim=512, num_heads=8, num_layers=6, ffn_dim=2048):
-        """
-        Параметры:
-          enc_hid_dim: размерность выходных эмбеддингов (d_model в трансформере), 
-          должен совпадать с количеством выходных каналов в cnn
-          num_heads: число голов внимания
-          num_layers: число слоёв энкодера
-          ffn_dim: размерность внутреннего слоя FFN
-        """
-        super(TransformerEncoderModule, self).__init__()
+    def __init__(self, enc_hid_dim=1024, num_heads=16, num_layers=24, ffn_dim=8192, height=256, width=256):
+        super().__init__()
         self.enc_hid_dim = enc_hid_dim
-        # Позиционное кодирование для последовательностей длиной до 32768
-        self.positional_encoding = nn.Embedding(32768, enc_hid_dim)
-        encoder_layer = TransformerEncoderLayer(d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim,batch_first=True)
+        self.positional_encoding = PositionalEncoding2D(enc_hid_dim, height, width)
+        encoder_layer = TransformerEncoderLayer(
+            d_model=enc_hid_dim, nhead=num_heads, dim_feedforward=ffn_dim, batch_first=True
+        )
         self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, x):
-        """
-        x: тензор формы (B, H, W, enc_hid_dim)
-        Сначала преобразуем в последовательность: (B, H*W, enc_hid_dim),
-        затем применим позиционное кодирование и трансформер,
-        и, наконец, вернём в форму (B, H, W, enc_hid_dim).
-        """
-        B, H, W, D = x.shape  # D должен быть равен enc_hid_dim (например, 512)
-        seq_len = H * W
-        # Преобразуем в (B, seq_len, D)
-        x_flat = x.view(B, seq_len, D)
-        # Создаем позиции (B, seq_len)
-        positions = torch.arange(seq_len, device=x.device).unsqueeze(0).repeat(B, 1)
-        pos_encoding = self.positional_encoding(positions)
-        x_flat = x_flat + pos_encoding
-        # Пропускаем через трансформер-энкодер
-        x_enc = self.transformer_encoder(x_flat)  # (B, seq_len, enc_hid_dim)
-        # Возвращаем исходную пространственную форму: (B, H, W, enc_hid_dim)
-        x_out = x_enc.view(B, H, W, D)
+        B, H, W, D = x.shape
+        x = self.positional_encoding(x)  # Добавляем 2D позиционные эмбеддинги
+        x_flat = x.view(B, H * W, D)  # Преобразуем в плоский формат для трансформера
+        # Убрали checkpoint, используем прямой проход
+        x_enc = self.transformer_encoder(x_flat)
+        x_out = x_enc.view(B, H, W, D)  # Возвращаем исходную форму
         return x_out

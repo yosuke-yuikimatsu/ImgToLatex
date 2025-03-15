@@ -1,34 +1,16 @@
 import torch
 import torch.nn as nn
-import torchvision.models as models
-
+import timm
 
 class CNN(nn.Module):
-    def __init__(self, output_channels=512):
-        """
-        Параметры:
-          output_channels: число каналов на выходе, например 512 или другое значение.
-          pretrained: использовать ли предобученную ResNet50.
-        """
-        super(CNN, self).__init__()
-        # Загружаем предобученную ResNet50
-        resnet = models.resnet50()
-        # Убираем слои глобального усреднения и классификации:
-        self.features = nn.Sequential(*list(resnet.children())[:-2])
-        # Если требуется изменить число каналов (ResNet50 выдает 2048), добавляем 1x1 свертку.
-        self.conv_reduction = None
-        if output_channels != 2048:
-            self.conv_reduction = nn.Conv2d(2048, output_channels, kernel_size=1)
+    def __init__(self, output_channels=1536):
+        super().__init__()
+        self.convnext = timm.create_model('convnext_large.fb_in22k', pretrained=False, num_classes=0)
+        self.conv_reduction = nn.Conv2d(1536, output_channels, kernel_size=1)  # ConvNeXt Large выдает 1536 каналов
         self.output_channels = output_channels
 
     def forward(self, x):
-        """
-        x: входной тензор с размерностью (B, 3, H, W)
-        Возвращает: (B, H', W', output_channels)
-        """
-        x = self.features(x)  # (B, 2048, H', W')
-        if self.conv_reduction is not None:
-            x = self.conv_reduction(x)  # (B, output_channels, H', W')
-        # Меняем порядок осей: (B, output_channels, H', W') -> (B, H', W', output_channels)
-        x = x.permute(0, 2, 3, 1).contiguous()
+        x = self.convnext.forward_features(x)  # (B, 1536, H', W')
+        x = self.conv_reduction(x)  # (B, output_channels, H', W')
+        x = x.permute(0, 2, 3, 1).contiguous()  # (B, H', W', output_channels)
         return x

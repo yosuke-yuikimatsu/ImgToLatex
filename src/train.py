@@ -38,7 +38,7 @@ NUM_EPOCHS = 100
 LEARNING_RATE = 1e-5
 START_TEACHER_FORCING = 0.9
 END_TEACHER_FORCING = 0.0
-RL_START_EPOCH = 50  # Эпоха, с которой начинается RL-обучение
+RL_START_EPOCH = 80 # Эпоха, с которой начинается RL-обучение
 
 # Размер словаря и специальные токены
 VOCAB_SIZE = 131
@@ -91,6 +91,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
 def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
     model.train()
     total_loss = 0.0
+    total_reward = 0.0
+    num_batches = 0
 
     for step, (images, _, _) in enumerate(dataloader):
         images = images.to(DEVICE, non_blocking=True)
@@ -98,8 +100,9 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
         optimizer.zero_grad()
 
         with autocast(device_type=str(DEVICE)):
-            corrected_predicted_tokens, rewards, loss = model(
+            predicted_tokens, rewards, loss = model(
                 images,
+                tgt_tokens=None,
                 train=True
             )
 
@@ -108,16 +111,19 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
         scaler.update()
 
         total_loss += loss.item()
+        total_reward += torch.mean(rewards).item() if rewards is not None else 0.0
+        num_batches += 1
 
         if (step + 1) % 50 == 0:
             avg_reward = torch.mean(rewards).item() if rewards is not None else 0.0
             print(f"[Epoch {epoch} RL] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}, Avg Reward: {avg_reward:.4f}")
 
-        del images, corrected_predicted_tokens, rewards, loss
+        del images, predicted_tokens, rewards, loss
         torch.cuda.empty_cache()
 
-    avg_loss = total_loss / len(dataloader)
-    return avg_loss
+    avg_loss = total_loss / num_batches
+    avg_reward = total_reward / num_batches
+    return avg_loss, avg_reward  # Возвращаем и loss, и reward
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
@@ -259,18 +265,18 @@ def main():
                 epoch,
                 teacher_forcing_ratio=tf_ratio
             )
+            print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}")
         else:
             # RL обучение с REINFORCE
             print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} (REINFORCE) ===")
-            avg_loss = train_one_epoch_rl(
+            avg_loss, avg_reward = train_one_epoch_rl(
                 model,
                 train_loader,
                 optimizer,
                 scaler,
                 epoch
             )
-
-        print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}")
+            print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}, Avg Reward: {avg_reward:.4f}")
 
         # Пример инференса
         print("--- Пример инференса (5 батчей) ---")

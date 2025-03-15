@@ -1,58 +1,47 @@
 import torch
 import torch.nn as nn
 from cnn import CNN
-from decoder import Decoder
 from encoder import TransformerEncoderModule
+from decoder import TransformerDecoderModule
 
 class ImageToLatexModel(nn.Module):
-    """
-    Модель, объединяющая:
-      1) CNN для извлечения признаков из изображения (B, H', W', 512)
-      2) Transformer-энкодер, который принимает вход (B, H', W', 512),
-         преобразует его в последовательность и возвращает в исходную форму
-         (B, H', W', 512)
-      3) Декодер, который принимает выход энкодера (B, H', W', 512)
-         и генерирует последовательность токенов.
-    """
     def __init__(
         self,
         vocab_size: int,
-        embed_dim: int = 256,
-        enc_hidden_dim: int = 512,
+        enc_hidden_dim: int = 1536,
         pad_idx: int = 0,
         sos_index: int = 1,
         eos_index: int = 2,
-        max_length: int = 100
+        max_length: int = 50,
+        beam_width: int = 5
     ):
         super().__init__()
-
-        # 1) CNN – выдаёт (B, H', W', 512)
         self.cnn = CNN(output_channels=enc_hidden_dim)
-
-        # 2) Transformer-энкодер, который теперь работает с размерностью 512
-        self.encoder = TransformerEncoderModule(enc_hid_dim=enc_hidden_dim)
-
-        # 3) Декодер, который ожидает вход (B, H', W', 512)
-        self.decoder = Decoder(
+        self.encoder = TransformerEncoderModule(enc_hid_dim=enc_hidden_dim, num_layers=10, ffn_dim=8192,num_heads=8)
+        self.decoder = TransformerDecoderModule(
             vocab_size=vocab_size,
-            embed_dim=embed_dim,
-            encoder_dim=enc_hidden_dim,
-            decoder_hidden=enc_hidden_dim,
-            pad_idx=pad_idx,
+            embed_dim=enc_hidden_dim,
+            num_heads=8,
+            num_layers=10,
+            ffn_dim=8192,
+            max_length=max_length,
             sos_index=sos_index,
-            eos_index=eos_index,
-            max_length=max_length
+            eos_index=eos_index
         )
+        self.pad_idx = pad_idx
+        self.sos_index = sos_index
+        self.eos_index = eos_index
+        self.max_length = max_length
+        self.beam_width = beam_width
 
-    def forward(self, images, tgt_tokens=None, teacher_forcing_ratio=0.0):
-        # 1) Изображение -> CNN: (B, H', W', 512)
+    def forward(self, images, tgt_tokens=None):
         features = self.cnn(images)
-        # 2) Пропуск через Transformer-энкодер:
-        encoder_outputs = self.encoder(features)  # (B, H', W', 512)
-        # 3) Передаем в декодер:
-        outputs = self.decoder(
-            encoder_outputs,
-            tgt_tokens=tgt_tokens,
-            teacher_forcing_ratio=teacher_forcing_ratio
-        )
-        return outputs
+        encoder_outputs = self.encoder(features)
+        B, H, W, D = encoder_outputs.shape
+        memory = encoder_outputs.view(B, H * W, D)
+        if tgt_tokens is not None:
+            logits = self.decoder(tgt_tokens, memory)
+            return logits  # В режиме обучения возвращаем только логиты
+        else:
+            logits, predicted_tokens = self.decoder(tgt_tokens, memory,self.beam_width)
+            return logits, predicted_tokens  # В режиме инференса возвращаем логиты и токены
