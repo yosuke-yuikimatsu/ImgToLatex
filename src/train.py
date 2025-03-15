@@ -4,18 +4,19 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from pathlib import Path
-from torch.amp import autocast, GradScaler  # Используем новый API
+from torch.amp import autocast, GradScaler
+
 from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+# Определяем устройство и количество GPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_GPUS = torch.cuda.device_count()
 print(f"Device: {DEVICE}, Number of GPUs: {NUM_GPUS}")
 
-# Вывод версий PyTorch и CUDA для диагностики
 print(f"PyTorch version: {torch.__version__}")
 print(f"CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
@@ -36,12 +37,12 @@ VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
 TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
-CHECKPOINT_DIR = Path("/kaggle/input/model-params")  # Путь к чекпоинтам
+CHECKPOINT_DIR = Path("/kaggle/input/model-params")
 OUTPUT_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
-BATCH_SIZE = 1  # Уменьшено для экономии памяти
+BATCH_SIZE = 3
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
@@ -52,7 +53,6 @@ SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 70
 
-# Проверка существования всех путей
 for path in [SAMPLES_DIR, DATA_BASE_DIR, TRAIN_DATA_PATH, TRAIN_LABEL_PATH,
              VAL_DATA_PATH, VAL_LABEL_PATH, TEST_DATA_PATH, TEST_LABEL_PATH, CHECKPOINT_DIR]:
     if not path.exists():
@@ -63,10 +63,9 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
     model.train()
     total_loss = 0.0
     for step, (images, targets, _) in enumerate(dataloader):
-        images = images.to(DEVICE, non_blocking=True)
-        targets = targets.to(DEVICE, non_blocking=True)
+        # Данные НЕ переносятся на DEVICE, остаются на CPU до передачи в модель
         optimizer.zero_grad()
-        with autocast(device_type="cuda" if DEVICE.type == "cuda" else "cpu"):
+        with autocast(device_type="cuda"):
             logits = model(images, tgt_tokens=targets)
             loss = criterion(
                 logits.view(-1, VOCAB_SIZE),
@@ -93,9 +92,9 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
     total_reward = 0.0
     num_batches = 0
     for step, (images, _, _) in enumerate(dataloader):
-        images = images.to(DEVICE, non_blocking=True)
+        # Данные НЕ переносятся на DEVICE
         optimizer.zero_grad()
-        with autocast(device_type="cuda" if DEVICE.type == "cuda" else "cpu"):
+        with autocast(device_type="cuda"):
             predicted_tokens, rewards, loss = model(images, tgt_tokens=None, train=True)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -121,10 +120,8 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     batches_processed = 0
     with torch.no_grad():
         for images, targets, img_paths in dataloader:
-            images = images.to(DEVICE)
-            targets = targets.to(DEVICE)
-            with autocast(dtype=torch.bfloat16 if DEVICE.type == "cuda" else torch.float32,
-                          device_type="cuda" if DEVICE.type == "cuda" else "cpu"):
+            # Данные НЕ переносятся на DEVICE
+            with autocast(device_type="cuda"):
                 logits, generated_tokens = model(images, tgt_tokens=None)
             targets = targets.cpu()
             for i in range(len(images)):
@@ -154,6 +151,10 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
 # -------------------- MAIN --------------------- #
 def main():
+    # Проверка памяти GPU перед началом
+    for i in range(NUM_GPUS):
+        print(f"GPU {i} memory summary:\n{torch.cuda.memory_summary(device=i)}")
+
     # Проверка путей
     print(f"Проверка путей:")
     print(f" - SAMPLES_DIR: {SAMPLES_DIR} exists: {SAMPLES_DIR.exists()}")
@@ -239,6 +240,7 @@ def main():
             model.load_state_dict(state_dict)
         except RuntimeError as e:
             print(f"Ошибка загрузки state_dict: {e}")
+            print("Проверьте соответствие структуры модели и чекпоинта")
             raise
         start_epoch = latest_epoch + 1
     else:
@@ -252,7 +254,7 @@ def main():
 
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-    scaler = GradScaler()  # Исправлено: без параметра device
+    scaler = GradScaler()
 
     # Обучение
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
