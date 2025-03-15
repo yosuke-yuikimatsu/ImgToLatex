@@ -20,7 +20,7 @@ def indices_to_latex(sequence):
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-SAMPLES_DIR = Path.cwd() / ".." / "samples"
+SAMPLES_DIR = Path.cwd() / "samples"
 DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
 TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
