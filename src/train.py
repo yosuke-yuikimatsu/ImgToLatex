@@ -39,6 +39,8 @@ NUM_EPOCHS = 100
 LEARNING_RATE = 1e-5
 START_TEACHER_FORCING = 0.9
 END_TEACHER_FORCING = 0.0
+START_SL_WEIGHT = 1.0  # Начальная доля SL
+END_SL_WEIGHT = 0.0    # Конечная доля SL
 
 # Размер словаря и специальные токены
 VOCAB_SIZE = 131
@@ -49,9 +51,11 @@ MAX_LENGTH = 30
 
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
-def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teacher_forcing_ratio=0.5):
+def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teacher_forcing_ratio=0.5, sl_weight=1.0):
     model.train()
     total_loss = 0.0
+    total_sl_loss = 0.0
+    total_rl_loss = 0.0
 
     for step, (images, targets, _) in enumerate(dataloader):
         images = images.to(DEVICE, non_blocking=True)
@@ -66,36 +70,47 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, teac
                 tgt_tokens=targets,
                 teacher_forcing_ratio=teacher_forcing_ratio
             )
-
             B, T = targets.shape
             vocab_size = logits.size(-1)
-            loss = criterion(
+            sl_loss = criterion(
                 logits.view(-1, vocab_size),
                 targets[:, 1:].contiguous().view(-1)
             )
 
-        scaler.scale(loss).backward()
+            # REINFORCE Learning (RL)
+            predicted_tokens, rewards, rl_loss = model.module._reinforce_decode(images) if isinstance(model, nn.DataParallel) else model._reinforce_decode(images)
+
+            # Комбинированная потеря
+            combined_loss = sl_weight * sl_loss + (1.0 - sl_weight) * rl_loss
+
+        scaler.scale(combined_loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
-        total_loss += loss.item()
+        total_loss += combined_loss.item()
+        total_sl_loss += sl_loss.item()
+        total_rl_loss += rl_loss.item()
 
         # Печать каждые 50 итераций
         if (step + 1) % 50 == 0:
-            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
+            print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Combined Loss: {combined_loss.item():.8f}, "
+                  f"SL Loss: {sl_loss.item():.8f}, RL Loss: {rl_loss.item():.8f}, SL Weight: {sl_weight:.2f}")
 
         # Явно очищаем память
-        del images, targets, logits, alphas, loss
+        del images, targets, logits, alphas, predicted_tokens, rewards, rl_loss, sl_loss, combined_loss
         torch.cuda.empty_cache()
 
     avg_loss = total_loss / len(dataloader)
-    return avg_loss
+    avg_sl_loss = total_sl_loss / len(dataloader)
+    avg_rl_loss = total_rl_loss / len(dataloader)
+    return avg_loss, avg_sl_loss, avg_rl_loss
 
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     model.eval()
     all_bleu = []
+    all_rewards = []
     batches_processed = 0
     bleu_score = None
 
@@ -105,31 +120,37 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
             with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
                           device_type=str(DEVICE)):
+                # Используем жадную декодировку для предсказаний
                 generated_tokens, alphas_all = model(images, tgt_tokens=None, teacher_forcing_ratio=0.0)
+                _, rewards, _ = model.module._reinforce_decode(images, train=False) if isinstance(model, nn.DataParallel) else model._reinforce_decode(images, train=False)
 
             generated_tokens = generated_tokens.cpu()
             targets = targets.cpu()
+            rewards = rewards.cpu()
 
             for i in range(len(images)):
-                # Для вычисления BLEU удаляем первый токен (SOS) из референсной последовательности
                 ref_tokens = targets[i].tolist()[1:]
                 cand_tokens = generated_tokens[i].tolist()
 
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
                     all_bleu.append(bleu_score)
-                else:
-                    print("BLEU вычисление отключено.")
 
-                real_str = indices_to_latex(targets[i].tolist()[1:])
-                pred_str = indices_to_latex(generated_tokens[i].tolist())
+                real_str = indices_to_latex(ref_tokens)
+                pred_str = indices_to_latex(cand_tokens)
+                reward = rewards[i].item()
+                compilable = reward > 0  # Если reward = 1.0, то скомпилировалось
+                all_rewards.append(reward)
+
                 print(f"=== Sample {i + 1} ===")
-                print(f"  Path : {img_paths[i]}")
-                print(f"  Real : {real_str}")
-                print(f"  Pred : {pred_str}")
-                print(f"BLEU : {bleu_score:.2f}")
+                print(f"  Path       : {img_paths[i]}")
+                print(f"  Real       : {real_str}")
+                print(f"  Pred       : {pred_str}")
+                print(f"  BLEU       : {bleu_score:.2f}")
+                print(f"  Reward     : {reward:.2f}")
+                print(f"  Compilable : {compilable}")
 
-            del images, targets, generated_tokens, alphas_all
+            del images, targets, generated_tokens, alphas_all, rewards
             torch.cuda.empty_cache()
 
             batches_processed += 1
@@ -139,8 +160,12 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     if compute_bleu_metric and all_bleu:
         avg_bleu = sum(all_bleu) / len(all_bleu)
         var_bleu = np.var(all_bleu)
+        avg_reward = sum(all_rewards) / len(all_rewards)
+        var_reward = np.var(all_rewards)
         print(f"Average BLEU: {avg_bleu:.2f}")
         print(f"Variance of BLEU: {var_bleu}")
+        print(f"Average Reward: {avg_reward:.2f}")
+        print(f"Variance of Reward: {var_reward}")
     elif compute_bleu_metric:
         print("No BLEU scores computed.")
 
@@ -173,7 +198,7 @@ def main():
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=dynamic_collate_fn,  
+        collate_fn=dynamic_collate_fn,
         drop_last=False,
         num_workers=2
     )
@@ -198,23 +223,20 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
-    # Schedule для teacher forcing: линейно уменьшаем от START до END за NUM_EPOCHS
     teacher_forcing_schedule = torch.linspace(START_TEACHER_FORCING, END_TEACHER_FORCING, steps=NUM_EPOCHS).tolist()
+    sl_weight_schedule = torch.linspace(START_SL_WEIGHT, END_SL_WEIGHT, steps=NUM_EPOCHS).tolist()
 
     # ---------------- ВОССТАНОВЛЕНИЕ ПОСЛЕДНЕЙ КОНТРОЛЬНОЙ ТОЧКИ ----------------
-    # Ищем файлы чекпоинтов в папке PARAMS_DIR с именами вида model_epoch_{epoch}.pth
     checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
-            # Ожидается формат имени: model_epoch_{epoch}.pth
             return int(checkpoint_path.stem.split("_")[-1])
 
-        # Сортируем по номеру эпохи
         checkpoint_files.sort(key=extract_epoch)
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE,weights_only=True))
+        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE, weights_only=True))
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
@@ -223,23 +245,25 @@ def main():
     # ----------------- ОБУЧЕНИЕ ----------------- #
     predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
-        tf_ratio = teacher_forcing_schedule[epoch - 1]  # индексируем с 0
-        print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f} ===")
+        tf_ratio = teacher_forcing_schedule[epoch - 1]
+        sl_weight = sl_weight_schedule[epoch - 1]
+        print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS}, teacher_forcing_ratio={tf_ratio:.2f}, sl_weight={sl_weight:.2f} ===")
 
-        avg_loss = train_one_epoch(
+        avg_loss, avg_sl_loss, avg_rl_loss = train_one_epoch(
             model,
             train_loader,
             criterion,
             optimizer,
             scaler,
             epoch,
-            teacher_forcing_ratio=tf_ratio
+            teacher_forcing_ratio=tf_ratio,
+            sl_weight=sl_weight
         )
 
-        print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.4f}")
+        print(f"Epoch {epoch} done. Avg Combined Loss: {avg_loss:.4f}, Avg SL Loss: {avg_sl_loss:.4f}, Avg RL Loss: {avg_rl_loss:.4f}")
 
         # Небольшой predict
-        print("--- Пример инференса (1 батч) ---")
+        print("--- Пример инференса (5 батчей) ---")
         predict(model, val_loader, num_batches=5, compute_bleu_metric=True)
 
         # Сохраняем чекпоинт после каждой эпохи
