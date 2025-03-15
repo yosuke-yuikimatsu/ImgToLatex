@@ -289,7 +289,7 @@ def main():
             print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.8f}, Avg Reward: {avg_reward:.4f}")
 
         print("--- Пример инференса (5 батчей) ---")
-        predict(model, val_loader, num_batches=5, compute_bleu_metric=True)
+        predict(model, val_loader, num_batches=5, compute_bleu_metric=False)
 
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
         torch.save(model.state_dict(), checkpoint_path)

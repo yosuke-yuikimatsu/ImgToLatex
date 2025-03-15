@@ -31,5 +31,5 @@ class TransformerEncoderModule(nn.Module):
         x_flat = x.view(B, H * W, D)  # Преобразуем в плоский формат для трансформера
         # Убрали checkpoint, используем прямой проход
         x_enc = self.transformer_encoder(x_flat)
-        x_out = x_enc.view(B, H, W, D)  # Возвращаем исходную форму
+        x_out = x_enc  # Возвращаем исходную форму
         return x_out

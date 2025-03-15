@@ -38,8 +38,7 @@ class ImageToLatexModel(nn.Module):
     def forward(self, images, tgt_tokens=None, train=False):
         features = self.cnn(images)
         encoder_outputs = self.encoder(features)
-        B, H, W, D = encoder_outputs.shape
-        memory = encoder_outputs.view(B, H * W, D)
+        memory = encoder_outputs
 
         if train and tgt_tokens is None:
             # RL режим с REINFORCE
