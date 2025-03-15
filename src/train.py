@@ -8,7 +8,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from pathlib import Path
 
-from model import ImageToLatexModel  # Предполагается, что Decoder с REINFORCE уже в модели
+from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn, indices_to_latex
 from metrics.bleu_score import compute_bleu
 
@@ -26,7 +26,7 @@ VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/content/drive/MyDrive/params_resnet")
+PARAMS_DIR = Path("/content/drive/MyDrive/params_new_model")
 os.makedirs(PARAMS_DIR, exist_ok=True)
 
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
@@ -92,7 +92,7 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch):
     model.train()
     total_loss = 0.0
 
-    for step, (images, _, _) in enumerate(dataloader):  
+    for step, (images, _, _) in enumerate(dataloader):
         images = images.to(DEVICE, non_blocking=True)
 
         optimizer.zero_grad()

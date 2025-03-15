@@ -238,7 +238,8 @@ class Decoder(nn.Module):
         return rewards
 
     def _is_compilable_latex(self, latex_code):
-        walker = LatexWalker(latex_code)
+        wrapped_code = f"${latex_code}$"
+        walker = LatexWalker(wrapped_code)
         try:
             walker.get_latex_nodes()
             return True
