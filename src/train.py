@@ -34,7 +34,7 @@ TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
 VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
-TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_aformulas.tok.lst"
+TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
 
 CHECKPOINT_DIR = Path("/kaggle/input/model-params")
 OUTPUT_DIR = Path("/kaggle/working/checkpoints")
