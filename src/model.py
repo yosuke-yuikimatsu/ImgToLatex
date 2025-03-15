@@ -37,8 +37,7 @@ class ImageToLatexModel(nn.Module):
     def forward(self, images, tgt_tokens=None):
         features = self.cnn(images)
         encoder_outputs = self.encoder(features)
-        B, H, W, D = encoder_outputs.shape
-        memory = encoder_outputs.view(B, H * W, D)
+        memory = encoder_outputs
         if tgt_tokens is not None:
             logits = self.decoder(tgt_tokens, memory)
             return logits  # В режиме обучения возвращаем только логиты

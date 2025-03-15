@@ -38,7 +38,7 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 32
+BATCH_SIZE = 3
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
@@ -231,7 +231,7 @@ def main():
         start_epoch = 1
 
     # Обучение
-    #predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
+    predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
