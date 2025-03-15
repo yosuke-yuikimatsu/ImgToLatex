@@ -225,21 +225,29 @@ def main():
     # Используем DataParallel, если доступно несколько GPU
     if NUM_GPUS > 1:
         print(f"Using {NUM_GPUS} GPUs with DataParallel!")
-        model = nn.DataParallel(model, device_ids=[0, 1])  # Явно указываем GPU 0 и 1
+        device_ids = list(range(NUM_GPUS))  # [0, 1] для двух GPU
+        model = nn.DataParallel(model, device_ids=device_ids)
+        model = model.to(DEVICE)
+    else:
+        model = model.to(DEVICE)
 
-    # Переносим модель на GPU после обёртывания
-    model = model.to(DEVICE)
-
-    # Проверка устройств
+    # Проверка устройств и памяти
     print(f"Устройство модели: {next(model.parameters()).device}")
-    for i, (images, targets, _) in enumerate(train_loader):
-        print(f"Устройство данных: {images.device}, {targets.device}")
-        break
-
-    # Проверка памяти GPU после инициализации модели
     for i in range(NUM_GPUS):
         print(f"GPU {i} memory allocated: {torch.cuda.memory_allocated(i) / 1024**2:.2f} MiB")
         print(f"GPU {i} max memory allocated: {torch.cuda.max_memory_allocated(i) / 1024**2:.2f} MiB")
+
+    # Тестовый вызов модели для проверки распределения
+    print("Тестируем распределение на первом батче...")
+    for images, targets, _ in train_loader:
+        print(f"Устройство данных до модели: {images.device}, {targets.device}")
+        with torch.no_grad():
+            with autocast(device_type="cuda"):
+                logits = model(images, tgt_tokens=targets)
+        print(f"Устройство вывода: {logits.device}")
+        break
+    for i in range(NUM_GPUS):
+        print(f"GPU {i} memory after test: {torch.cuda.memory_allocated(i) / 1024**2:.2f} MiB")
 
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
