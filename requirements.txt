@@ -1,3 +1,6 @@
-Pillow
-pylatexenc
-timm
+matplotlib==3.8.0
+Pillow==11.1.0
+pylatexenc==2.10
+timm==1.0.15
+torch==2.5.1
+torchvision==0.20.1
