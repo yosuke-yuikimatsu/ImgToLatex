@@ -52,29 +52,25 @@ PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 70
-GRADIENT_ACCUMULATION_STEPS = 4  # Количество шагов для накопления градиентов
 
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank):
     model.train()
     total_loss = 0.0
-    optimizer.zero_grad()
     for step, (images, targets, _) in enumerate(dataloader):
         images, targets = images.to(rank), targets.to(rank)
+        optimizer.zero_grad()
         with autocast(device_type="cuda"):
             logits = model(images, tgt_tokens=targets)
             loss = criterion(
                 logits.view(-1, VOCAB_SIZE),
                 targets[:, 1:].contiguous().view(-1)
-            ) / GRADIENT_ACCUMULATION_STEPS
+            )
         scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         total_loss += loss.item()
-
-        if (step + 1) % GRADIENT_ACCUMULATION_STEPS == 0:
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
 
         if (step + 1) % 500 == 0 and rank == 0:
             pred_tokens = torch.argmax(logits, dim=-1)
@@ -93,21 +89,17 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch, rank):
     total_loss = 0.0
     total_reward = 0.0
     num_batches = 0
-    optimizer.zero_grad()
     for step, (images, _, _) in enumerate(dataloader):
         images = images.to(rank)
+        optimizer.zero_grad()
         with autocast(device_type="cuda"):
             predicted_tokens, rewards, loss = model(images, tgt_tokens=None, train=True)
-            loss = loss / GRADIENT_ACCUMULATION_STEPS
         scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         total_loss += loss.item()
         total_reward += torch.mean(rewards).item() if rewards is not None else 0.0
         num_batches += 1
-
-        if (step + 1) % GRADIENT_ACCUMULATION_STEPS == 0:
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
 
         if (step + 1) % 500 == 0 and rank == 0:
             avg_reward = torch.mean(rewards).item() if rewards is not None else 0.0
