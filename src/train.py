@@ -12,7 +12,6 @@ from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
 
-
 # Инициализация распределенного процесса
 def ddp_setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -20,12 +19,10 @@ def ddp_setup(rank, world_size):
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
-
 # Функция для преобразования индексов в LaTeX
 def indices_to_latex(sequence):
     annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
     return annotation
-
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 SAMPLES_DIR = Path.cwd() / "samples"
@@ -42,7 +39,7 @@ OUTPUT_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
-BATCH_SIZE = 8  # Уменьшено для экономии памяти
+BATCH_SIZE = 8
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
@@ -53,7 +50,6 @@ SOS_IDX = 1
 EOS_IDX = 2
 MAX_LENGTH = 70
 
-
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank):
     model.train()
@@ -62,7 +58,11 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank
         images, targets = images.to(rank), targets.to(rank)
         optimizer.zero_grad()
         with autocast(device_type="cuda"):
-            logits = model(images, tgt_tokens=targets)
+            outputs = model(images, tgt_tokens=targets)  # Убедимся, что модель возвращает только logits
+            if isinstance(outputs, tuple):
+                logits = outputs[0]  # Если модель возвращает кортеж, берём logits
+            else:
+                logits = outputs
             loss = criterion(
                 logits.view(-1, VOCAB_SIZE),
                 targets[:, 1:].contiguous().view(-1)
@@ -82,7 +82,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank
     avg_loss = total_loss / len(dataloader)
     return avg_loss
 
-
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (REINFORCE) ----------------- #
 def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch, rank):
     model.train()
@@ -93,7 +92,8 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch, rank):
         images = images.to(rank)
         optimizer.zero_grad()
         with autocast(device_type="cuda"):
-            predicted_tokens, rewards, loss = model(images, tgt_tokens=None, train=True)
+            predicted_tokens, rewards, rl_loss = model(images, tgt_tokens=None, train=True)
+            loss = rl_loss  # Используем предвычисленный RL loss
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -113,7 +113,6 @@ def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch, rank):
     avg_reward = total_reward / num_batches
     return avg_loss, avg_reward
 
-
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
     model.eval()
@@ -123,7 +122,11 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
         for images, targets, img_paths in dataloader:
             images, targets = images.to(rank), targets.to(rank)
             with autocast(device_type="cuda"):
-                logits, generated_tokens = model(images, tgt_tokens=None)
+                outputs = model(images, tgt_tokens=None)
+                if isinstance(outputs, tuple):
+                    _, generated_tokens = outputs  # Берем только generated_tokens
+                else:
+                    generated_tokens = outputs
             targets = targets.cpu()
             for i in range(len(images)):
                 ref_tokens = indices_to_latex(targets[i, 1:].tolist())
@@ -140,7 +143,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
                     print(f"  Real : {''.join(ref_tokens)}")
                     print(f"  Pred : {''.join(cand_tokens)}")
                     print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
-            del images, targets, logits, generated_tokens
+            del images, targets, generated_tokens
             torch.cuda.empty_cache()
             batches_processed += 1
             if batches_processed >= num_batches:
@@ -150,7 +153,6 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
         print(f"Average BLEU: {avg_bleu:.2f}")
     elif compute_bleu_metric and rank == 0:
         print("No BLEU scores computed.")
-
 
 # -------------------- MAIN --------------------- #
 def main(rank, world_size):
@@ -205,7 +207,7 @@ def main(rank, world_size):
         pin_memory=True
     )
 
-    # Создаём модель на текущем устройстве
+    # Создаём модель
     print(f"Creating model on rank {rank}...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
@@ -216,40 +218,25 @@ def main(rank, world_size):
         max_length=MAX_LENGTH,
         beam_width=BEAM_WIDTH
     ).to(rank)
-    model = DDP(model, device_ids=[rank])
+    model = DDP(model, device_ids=[rank], find_unused_parameters=True)  # Добавляем find_unused_parameters
 
-    # Загрузка чекпоинта на текущее устройство
+    # Загрузка чекпоинта
     checkpoint_files = list(CHECKPOINT_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
             return int(checkpoint_path.stem.split("_")[-1])
-
         checkpoint_files.sort(key=extract_epoch)
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
-        print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
+        if rank == 0:
+            print(f"Найден чекпоинт {latest_checkpoint}, возобновляем с эпохи {latest_epoch + 1}")
         state_dict = torch.load(latest_checkpoint, map_location=f'cuda:{rank}')
         model.module.load_state_dict(state_dict)
         start_epoch = latest_epoch + 1
     else:
-        print("Чекпоинты не найдены, начинаем обучение с нуля.")
+        if rank == 0:
+            print("Чекпоинты не найдены, начинаем с нуля.")
         start_epoch = 1
-
-    # Проверка устройств и памяти
-    print(f"Устройство модели на rank {rank}: {next(model.parameters()).device}")
-    print(f"GPU {rank} memory allocated: {torch.cuda.memory_allocated(rank) / 1024 ** 2:.2f} MiB")
-    print(f"GPU {rank} max memory allocated: {torch.cuda.max_memory_allocated(rank) / 1024 ** 2:.2f} MiB")
-
-    # Тестовый вызов модели для проверки распределения
-    print(f"Тестируем распределение на первом батче на rank {rank}...")
-    for images, targets, _ in train_loader:
-        print(f"Устройство данных до модели на rank {rank}: {images.device}, {targets.device}")
-        with torch.no_grad():
-            with autocast(device_type="cuda"):
-                logits = model(images, tgt_tokens=targets)
-        print(f"Устройство вывода на rank {rank}: {logits.device}")
-        break
-    print(f"GPU {rank} memory after test: {torch.cuda.memory_allocated(rank) / 1024 ** 2:.2f} MiB")
 
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
@@ -257,7 +244,7 @@ def main(rank, world_size):
 
     # Обучение
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
-        train_sampler.set_epoch(epoch)  # Обновляем sampler для каждой эпохи
+        train_sampler.set_epoch(epoch)
         if epoch < RL_START_EPOCH:
             if rank == 0:
                 print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} (Supervised) ===")
@@ -288,8 +275,9 @@ def main(rank, world_size):
 
     destroy_process_group()
 
-
 if __name__ == "__main__":
     world_size = torch.cuda.device_count()
+    if world_size == 0:
+        raise RuntimeError("No GPUs found. This code requires CUDA support.")
     print(f"World size: {world_size}")
     torch.multiprocessing.spawn(main, args=(world_size,), nprocs=world_size, join=True)
