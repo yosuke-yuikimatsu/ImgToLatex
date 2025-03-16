@@ -13,6 +13,8 @@ from metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+
 def indices_to_latex(sequence):
     annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
     return annotation
