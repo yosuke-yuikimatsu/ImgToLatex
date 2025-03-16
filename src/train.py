@@ -42,7 +42,7 @@ OUTPUT_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
-BATCH_SIZE = 1  # Уменьшено для экономии памяти
+BATCH_SIZE = 8  # Уменьшено для экономии памяти
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
