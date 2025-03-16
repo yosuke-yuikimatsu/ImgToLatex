@@ -211,7 +211,7 @@ def main(rank, world_size):
     print(f"Creating model on rank {rank}...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=1536,
+        enc_hidden_dim=384,
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
