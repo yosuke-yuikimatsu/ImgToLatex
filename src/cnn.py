@@ -3,7 +3,7 @@ import torch.nn as nn
 import timm
 
 class CNN(nn.Module):
-    def __init__(self, output_channels=384):  # Оставляем output_channels как 384 для декодера
+    def __init__(self, output_channels=1536):  # Оставляем output_channels как 384 для декодера
         super().__init__()
         self.convnext = timm.create_model('convnext_small.fb_in22k', pretrained=False, num_classes=0)
         in_channels = 768  # ConvNeXt Small выдаёт 768 каналов

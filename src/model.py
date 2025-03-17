@@ -8,7 +8,7 @@ class ImageToLatexModel(nn.Module):
     def __init__(
         self,
         vocab_size: int,
-        enc_hidden_dim: int = 384,
+        enc_hidden_dim: int = 1536,
         pad_idx: int = 0,
         sos_index: int = 1,
         eos_index: int = 2,
