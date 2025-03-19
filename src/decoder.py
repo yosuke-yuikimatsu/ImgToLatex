@@ -5,7 +5,7 @@ from pylatexenc.latexwalker import LatexWalker, LatexWalkerParseError
 
 
 class TransformerDecoderModule(nn.Module):
-    def __init__(self, vocab_size=131, embed_dim=1536, num_heads=8, num_layers=6, ffn_dim=2048, max_length=50,
+    def __init__(self, vocab_size=131, embed_dim=1536, num_heads=12, num_layers=12, ffn_dim=4096, max_length=50,
                  sos_index=1, eos_index=2, pad_idx=0):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
