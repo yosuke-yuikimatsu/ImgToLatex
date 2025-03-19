@@ -75,7 +75,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank
         if (step + 1) % 500 == 0 and rank == 0:
             pred_tokens = torch.argmax(logits, dim=-1)
             gen_sequence = indices_to_latex(pred_tokens[0, :].tolist())
-            print(f"[Current Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
+            print(f"[New Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
             print("Generated sequence:", gen_sequence)
         del images, targets, logits, loss
         torch.cuda.empty_cache()
