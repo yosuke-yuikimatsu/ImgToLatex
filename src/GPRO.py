@@ -163,14 +163,14 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
     scaler = GradScaler(device=str(DEVICE))
 
-    """ total_params = sum(p.numel() for p in model.parameters())
+    total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params}")
-    """
+    
     # Учительское принуждение не используется в трансформерной модели
     # START_TEACHER_FORCING и END_TEACHER_FORCING убраны
 
     # Восстановление последней контрольной точки
-    """ checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
+    checkpoint_files = list(PARAMS_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
             return int(checkpoint_path.stem.split("_")[-1])
@@ -183,12 +183,10 @@ def main():
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
-        start_epoch = 1 """
+        start_epoch = 1
     
-    print("Restoring best parameters")
-    model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True))
 
-    for epoch in range(51, 101):
+    for epoch in range(start_epoch, 101):
         avg_loss = train_one_epoch_policy_gradient(model, train_loader, optimizer)
         print(f"Policy Gradient Epoch {epoch} done. Avg Loss: {avg_loss:.8f}")
         predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
