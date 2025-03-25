@@ -10,6 +10,7 @@ from pathlib import Path
 from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
+from fix import fix
 
 from torch.amp import autocast, GradScaler
 
@@ -119,11 +120,14 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                 else:
                     print("BLEU вычисление отключено.")
                     bleu_score = None
-
+                cand_str = ''.join(cand_tokens)
+                ref_str = ''.join(ref_tokens)
+                cand_str_fixed = fix(cand_str)
                 print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
-                print(f"  Real : {''.join(ref_tokens)}")
-                print(f"  Pred : {''.join(cand_tokens)}")
+                print(f"  Real : {ref_str}")
+                print(f"  Pred : {cand_str}")
+                print(f"  Fixed Pred : {cand_str_fixed}")
                 print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
 
             del images, targets, logits, generated_tokens
@@ -229,9 +233,12 @@ def main():
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
         start_epoch = 1
+    
+    """ print("Restoring best parameters")
+    model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
+    predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
