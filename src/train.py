@@ -39,7 +39,7 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 32
+BATCH_SIZE = 8
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
@@ -122,12 +122,12 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                     bleu_score = None
                 cand_str = ''.join(cand_tokens)
                 ref_str = ''.join(ref_tokens)
-                cand_str_fixed = fix(cand_str)
+                #cand_str_fixed = fix(cand_str)
                 print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
                 print(f"  Real : {ref_str}")
                 print(f"  Pred : {cand_str}")
-                print(f"  Fixed Pred : {cand_str_fixed}")
+                #print(f"  Fixed Pred : {cand_str_fixed}")
                 print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
 
             del images, targets, logits, generated_tokens

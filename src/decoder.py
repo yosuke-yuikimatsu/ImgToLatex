@@ -129,3 +129,25 @@ class TransformerDecoderModule(nn.Module):
                 predicted_tokens.append(torch.tensor([self.sos_index], device=device))  # Fallback
 
         return None, predicted_tokens  # Логиты не возвращаем, так как они не нужны для beam search
+    
+
+    def sample_sequence(self, memory, temperature= 1):
+        device = memory.device
+        B = memory.size(0)
+        generated_tokens = torch.full((B, 1), self.sos_index, dtype=torch.long, device=device)
+        log_probs = []
+
+        for t in range(self.max_length - 1):
+            tgt_emb = self.embedding(generated_tokens) + self.pos_encoding(torch.arange(generated_tokens.size(1), device=device))
+            output = self.transformer_decoder(tgt_emb, memory)
+            logits = self.output_layer(output[:, -1, :])  # (B, vocab_size)
+            probs = torch.softmax(logits / temperature, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)  # (B, 1)
+            log_prob = torch.log(probs.gather(-1, next_token)).squeeze(-1)  # (B)
+            log_probs.append(log_prob)
+            generated_tokens = torch.cat([generated_tokens, next_token], dim=1)
+            if (generated_tokens[:, -1] == self.eos_index).all():
+                break
+
+        total_log_probs = torch.stack(log_probs).sum(dim=0)  # (B)
+        return generated_tokens[:, 1:], total_log_probs  # Remove SOS
