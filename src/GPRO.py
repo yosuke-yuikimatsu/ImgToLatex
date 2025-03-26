@@ -191,6 +191,10 @@ def main():
         print(f"Policy Gradient Epoch {epoch} done. Avg Loss: {avg_loss:.8f}")
         predict(model, val_loader, num_batches=1, compute_bleu_metric=True)
 
+        checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
+        torch.save(model.state_dict(), checkpoint_path)
+        print(f"Чекпоинт сохранён: {checkpoint_path}")
+
 
 if (__name__ == "__main__") : 
     main()
