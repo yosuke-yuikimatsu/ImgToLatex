@@ -235,8 +235,8 @@ def main():
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
         start_epoch = 1
     
-    print("Restoring best parameters")
-    model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True))
+    """ print("Restoring best parameters")
+    model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     gpro_trainer = GPROTrainer(model=model, optimizer=optimizer,device=DEVICE)
 
