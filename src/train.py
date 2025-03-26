@@ -11,6 +11,7 @@ from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
 from fix import fix
+from GPRO import GPROTrainer
 
 from torch.amp import autocast, GradScaler
 
@@ -39,9 +40,9 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 3e-5
+LEARNING_RATE = 1e-5
 BEAM_WIDTH = 5
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
@@ -234,11 +235,31 @@ def main():
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
         start_epoch = 1
     
-    """ print("Restoring best parameters")
-    model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
+    print("Restoring best parameters")
+    model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True))
+
+    gpro_trainer = GPROTrainer(model=model, optimizer=optimizer,device=DEVICE)
+
+    for epoch in range(start_epoch, NUM_EPOCHS + 1):
+        print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
+        
+        total_loss = 0.0
+        for step, batch in enumerate(train_loader):
+            loss = gpro_trainer.update(batch)
+            total_loss += loss
+            
+            if (step + 1) % 50 == 0:
+                print(f"Step [{step + 1}/{len(train_loader)}], Loss: {loss:.4f}")
+        
+        avg_loss = total_loss / len(train_loader)
+        print(f"Epoch {epoch} Avg Loss: {avg_loss:.4f}")
+        predict(model,val_loader,num_batches=1,compute_bleu_metric=True)
+        checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
+        torch.save(model.state_dict(), checkpoint_path)
+        print(f"Чекпоинт сохранён: {checkpoint_path}")
 
     # Обучение
-    predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
+    """ predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
@@ -261,7 +282,7 @@ def main():
 
     print("Training done!")
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
-    print(f"Model saved to {MODEL_SAVE_PATH}")
+    print(f"Model saved to {MODEL_SAVE_PATH}") """
 
 if __name__ == "__main__":
     main()
