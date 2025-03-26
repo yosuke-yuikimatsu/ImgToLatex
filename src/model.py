@@ -27,7 +27,6 @@ class ImageToLatexModel(nn.Module):
             max_length=max_length,
             sos_index=sos_index,
             eos_index=eos_index,
-            pad_idx=pad_idx  # Добавляем pad_idx в декодер
         )
         self.pad_idx = pad_idx
         self.sos_index = sos_index

@@ -12,20 +12,21 @@ from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
 
-# Инициализация распределенного процесса
 def ddp_setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
+
 # Функция для преобразования индексов в LaTeX
 def indices_to_latex(sequence):
     annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
     return annotation
 
+
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
-SAMPLES_DIR = Path.cwd() / "samples"
+SAMPLES_DIR = Path("/kaggle/working/samples/ImgToLatex-Kaggle-Learning/samples")
 DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
 TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
@@ -39,16 +40,17 @@ OUTPUT_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 MODEL_SAVE_PATH = OUTPUT_DIR / "image_to_latex_model.pth"
 
-BATCH_SIZE = 4
+BATCH_SIZE = 32
 NUM_EPOCHS = 100
 LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
-RL_START_EPOCH = 80
+RL_START_EPOCH = 100
 VOCAB_SIZE = 131
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 30
+MAX_LENGTH = 70
+
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (Supervised) ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank):
@@ -58,9 +60,9 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank
         images, targets = images.to(rank), targets.to(rank)
         optimizer.zero_grad()
         with autocast(device_type="cuda"):
-            outputs = model(images, tgt_tokens=targets)  # Убедимся, что модель возвращает только logits
+            outputs = model(images, tgt_tokens=targets)
             if isinstance(outputs, tuple):
-                logits = outputs[0]  # Если модель возвращает кортеж, берём logits
+                logits = outputs[0]
             else:
                 logits = outputs
             loss = criterion(
@@ -82,36 +84,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch, rank
     avg_loss = total_loss / len(dataloader)
     return avg_loss
 
-# ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ (REINFORCE) ----------------- #
-def train_one_epoch_rl(model, dataloader, optimizer, scaler, epoch, rank):
-    model.train()
-    total_loss = 0.0
-    total_reward = 0.0
-    num_batches = 0
-    for step, (images, _, _) in enumerate(dataloader):
-        images = images.to(rank)
-        optimizer.zero_grad()
-        with autocast(device_type="cuda"):
-            predicted_tokens, rewards, rl_loss = model(images, tgt_tokens=None, train=True)
-            loss = rl_loss  # Используем предвычисленный RL loss
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        total_loss += loss.item()
-        total_reward += torch.mean(rewards).item() if rewards is not None else 0.0
-        num_batches += 1
-
-        if (step + 1) % 500 == 0 and rank == 0:
-            avg_reward = torch.mean(rewards).item() if rewards is not None else 0.0
-            gen_sequence = indices_to_latex(predicted_tokens[0].tolist())
-            print(
-                f"[Epoch {epoch} RL] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}, Avg Reward: {avg_reward:.4f}")
-            print("Generated sequence:", gen_sequence)
-        del images, predicted_tokens, rewards, loss
-        torch.cuda.empty_cache()
-    avg_loss = total_loss / num_batches
-    avg_reward = total_reward / num_batches
-    return avg_loss, avg_reward
 
 # ------------------ ИНФЕРЕНС (PREDICT) ------------------- #
 def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
@@ -124,7 +96,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
             with autocast(device_type="cuda"):
                 outputs = model(images, tgt_tokens=None)
                 if isinstance(outputs, tuple):
-                    _, generated_tokens = outputs  # Берем только generated_tokens
+                    _, generated_tokens = outputs
                 else:
                     generated_tokens = outputs
             targets = targets.cpu()
@@ -153,6 +125,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True, rank=0):
         print(f"Average BLEU: {avg_bleu:.2f}")
     elif compute_bleu_metric and rank == 0:
         print("No BLEU scores computed.")
+
 
 # -------------------- MAIN --------------------- #
 def main(rank, world_size):
@@ -207,32 +180,62 @@ def main(rank, world_size):
         pin_memory=True
     )
 
-    # Создаём модель
-    print(f"Creating model on rank {rank}...")
+    print(f"Creating model on rank {rank} with enc_hidden_dim=768...")
     model = ImageToLatexModel(
         vocab_size=VOCAB_SIZE,
-        enc_hidden_dim=384,
+        enc_hidden_dim=768,  # Уменьшено с 1536 до 768
         pad_idx=PAD_IDX,
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
         max_length=MAX_LENGTH,
         beam_width=BEAM_WIDTH
     ).to(rank)
-    model = DDP(model, device_ids=[rank], find_unused_parameters=True)  # Добавляем find_unused_parameters
+    model = DDP(model, device_ids=[rank], find_unused_parameters=True)
 
-    # Загрузка чекпоинта
+    # Загрузка и обрезка чекпоинта
     checkpoint_files = list(CHECKPOINT_DIR.glob("model_epoch_*.pth"))
     if checkpoint_files:
         def extract_epoch(checkpoint_path: Path):
             return int(checkpoint_path.stem.split("_")[-1])
+
         checkpoint_files.sort(key=extract_epoch)
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         if rank == 0:
             print(f"Найден чекпоинт {latest_checkpoint}, возобновляем с эпохи {latest_epoch + 1}")
-        state_dict = torch.load(latest_checkpoint, map_location=f'cuda:{rank}')
-        model.module.load_state_dict(state_dict)
+
+        # Загружаем старый state_dict
+        old_state_dict = torch.load(latest_checkpoint, map_location="cpu")
+
+        # Адаптируем веса для новой модели
+        new_state_dict = model.module.state_dict()
+        adapted_state_dict = {}
+        for key in old_state_dict.keys():
+            old_param = old_state_dict[key]
+            new_param_shape = new_state_dict[key].shape
+            if old_param.shape == new_param_shape:
+                adapted_state_dict[key] = old_param
+            else:
+                if rank == 0:
+                    print(f"Обрезаем {key}: {old_param.shape} -> {new_param_shape}")
+                if len(old_param.shape) == 1:  # Bias
+                    adapted_state_dict[key] = old_param[:new_param_shape[0]]
+                elif len(old_param.shape) == 2:  # Linear/Embedding weights
+                    adapted_state_dict[key] = old_param[:new_param_shape[0], :new_param_shape[1]]
+                elif len(old_param.shape) == 4:  # CNN weights
+                    adapted_state_dict[key] = old_param[:new_param_shape[0], :new_param_shape[1], :new_param_shape[2],
+                                              :new_param_shape[3]]
+
+        # Загружаем обрезанные веса в модель
+        model.module.load_state_dict(adapted_state_dict)
+        if rank == 0:
+            print(f"Веса из {latest_checkpoint} обрезаны и загружены в модель с enc_hidden_dim=768")
         start_epoch = latest_epoch + 1
+
+        if rank == 0:
+            trimmed_checkpoint = OUTPUT_DIR / f"model_epoch_{latest_epoch}_trimmed.pth"
+            torch.save(adapted_state_dict, trimmed_checkpoint)
+            print(f"Обрезанный чекпоинт сохранён: {trimmed_checkpoint}")
     else:
         if rank == 0:
             print("Чекпоинты не найдены, начинаем с нуля.")
@@ -251,13 +254,6 @@ def main(rank, world_size):
             avg_loss = train_one_epoch(model, train_loader, criterion, optimizer, scaler, epoch, rank)
             if rank == 0:
                 print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.8f}")
-        else:
-            if rank == 0:
-                print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} (REINFORCE) ===")
-            avg_loss, avg_reward = train_one_epoch_rl(model, train_loader, optimizer, scaler, epoch, rank)
-            if rank == 0:
-                print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.8f}, Avg Reward: {avg_reward:.4f}")
-
         if rank == 0:
             print("--- Пример инференса (5 батчей) ---")
             predict(model, val_loader, num_batches=5, compute_bleu_metric=False, rank=rank)
@@ -274,6 +270,7 @@ def main(rank, world_size):
         print(f"Model saved to {MODEL_SAVE_PATH}")
 
     destroy_process_group()
+
 
 if __name__ == "__main__":
     world_size = torch.cuda.device_count()
