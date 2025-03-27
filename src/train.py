@@ -40,9 +40,9 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 NUM_EPOCHS = 100
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 3e-5
 BEAM_WIDTH = 5
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
@@ -239,7 +239,7 @@ def main():
     model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
+    predict(model, val_loader, num_batches=2, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
