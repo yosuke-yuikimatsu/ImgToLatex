@@ -61,7 +61,7 @@ class TransformerDecoderModule(nn.Module):
 
         all_logits = torch.cat(logits_list, dim=1)
         predicted_tokens = generated_tokens
-        mask = (predicted_tokens == self.eos_index).cumsum(dim=1) == 0
+        mask = (predicted_tokens != self.eos_index).cumprod(dim=1).bool()
         mask = torch.cat([torch.ones(B, 1, dtype=torch.bool, device=device), mask[:, :-1]], dim=1)
         lengths = mask.sum(dim=1)
         predicted_tokens = [predicted_tokens[i, :lengths[i]] for i in range(B)]
