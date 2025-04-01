@@ -1,0 +1,280 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f5f5f7;
+  color: #1d1d1f;
+  width: 380px;
+  height: 450px;
+}
+
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.header {
+  padding: 20px 20px 0 20px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  text-align: center;
+  letter-spacing: -0.02em;
+  color: #1d1d1f;
+}
+
+.tabs {
+  display: flex;
+  position: relative;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  flex: 1;
+  padding: 8px 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  border: none;
+  background: transparent;
+  color: #86868b;
+  transition: color 0.3s ease;
+}
+
+.tab.active {
+  color: #1d1d1f;
+}
+
+.tab-indicator {
+  position: absolute;
+  height: calc(100% - 8px);
+  top: 4px;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  z-index: 0;
+  transition: transform 0.3s cubic-bezier(1.34, 1.56, 0.64, 1);
+}
+
+.content {
+  flex: 1;
+  padding: 0 20px;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-content.active {
+  opacity: 1;
+  justify-content: center;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.code-area {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  padding: 16px;
+  flex: 1;
+  overflow: auto;
+  margin-bottom: 16px;
+  position: relative;
+  font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1d1d1f;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.preview-area {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  overflow: auto;
+  gap: 10px;
+}
+
+.captured-image {
+  max-width: 100%;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 10px;
+}
+
+.api-response-area {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  padding: 16px;
+  flex: 1;
+  overflow: auto;
+  font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1d1d1f;
+  max-height: 200px;
+}
+
+.api-json {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.action-button {
+  background: #1d1d1f;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  /* Make sure the copy button is not larger than the capture button */
+  margin: 0 auto;
+  width: 89%;
+  max-width: 89%;
+}
+
+.action-button:hover {
+  background: #2d2d2f;
+}
+
+.action-button:active {
+  transform: scale(0.98);
+}
+
+.button-text {
+  margin-left: 6px;
+}
+
+.footer {
+  padding: 20px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.capture-button {
+  width: 100%;
+  background: linear-gradient(135deg, #007bff, #6b7fff);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.2);
+
+}
+
+.capture-button:hover {
+  box-shadow: 0 6px 16px rgba(0, 123, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.capture-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #1d1d1f;
+    color: #f5f5f7;
+  }
+
+  .container {
+    background: rgba(40, 40, 40, 0.8);
+  }
+
+  h1 {
+    color: #f5f5f7;
+  }
+
+  .tabs {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .tab {
+    color: #86868b;
+  }
+
+  .tab.active {
+    color: #f5f5f7;
+  }
+
+  .tab-indicator {
+    background: #2c2c2e;
+  }
+
+  .code-area {
+    background: rgba(255, 255, 255, 0.05);
+    color: #f5f5f7;
+  }
+
+  .preview-area {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .action-button {
+    background: #f5f5f7;
+    color: #1d1d1f;
+  }
+
+  .action-button:hover {
+    background: #e5e5e7;
+  }
+
+  .footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .api-response-area {
+    background: rgba(255, 255, 255, 0.05);
+    color: #f5f5f7;
+  }
+}

@@ -1,0 +1,58 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaTeX Snapshot Selector</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="katex.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+</head>
+
+<body>
+  <div class="container glass-morphism">
+    <div class="header">
+      <h1>Im2Latex</h1>
+      <div class="tabs">
+        <button id="code-tab" class="tab active">Code</button>
+        <button id="preview-tab" class="tab">Preview</button>
+        <button id="api-tab" class="tab">API Response</button>
+        <div class="tab-indicator"></div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div id="code-content" class="tab-content active">
+        <div class="code-area">
+          <pre id="latex-code">\sqrt{a^2 + b^2}</pre>
+        </div>
+        <button id="copy-button" class="action-button">
+          <span class="button-text">Copy to Clipboard</span>
+        </button>
+      </div>
+
+      <div id="preview-content" class="tab-content">
+        <div class="preview-area">
+          <!-- Image will be inserted here dynamically -->
+          <img id="captured-image-preview" class="captured-image" style="display: none;" />
+          <div id="latex-preview"></div>
+        </div>
+      </div>
+
+      <div id="api-content" class="tab-content">
+        <div class="api-response-area">
+          <pre id="api-response" class="api-json">No API response yet</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button id="capture-button" class="capture-button">Select Screen Area</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+
+</html>
