@@ -10,8 +10,6 @@ from pathlib import Path
 from model import ImageToLatexModel
 from data.dataloader import DataGen, dynamic_collate_fn
 from metrics.bleu_score import compute_bleu
-from fix import fix
-from GPRO import GPROTrainer
 
 from torch.amp import autocast, GradScaler
 
