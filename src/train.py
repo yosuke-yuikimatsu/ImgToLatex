@@ -15,9 +15,17 @@ from GPRO import GPROTrainer
 
 from torch.amp import autocast, GradScaler
 
-def indices_to_latex(sequence):
-    annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
-    return annotation
+
+import json
+
+def load_token_dict(token_dict_path):
+    with open(token_dict_path, 'r', encoding='utf-8') as file:
+        return json.load(file)["token_to_id"]
+
+def indices_to_latex(indices, token_dict):
+    id_to_token = {v: k for k, v in token_dict.items()}
+    tokens = [id_to_token.get(idx, "<UNK>") for idx in indices if id_to_token.get(idx) not in {"<SOS>", "<EOS>"}]
+    return ' '.join(tokens)
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
