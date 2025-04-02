@@ -80,7 +80,7 @@ def main(args):
                 tokens_out = []
                 for token in tokens:
                     tokens_out.append(token)
-                if len(tokens_out) > 5:
+                if len(tokens_out) > 0:
                     post = ' '.join(tokens_out)
                     # use \sin instead of \operatorname{sin}
                     names = ['\\'+x.replace(' ', '') for x in re.findall(ops, post)]
