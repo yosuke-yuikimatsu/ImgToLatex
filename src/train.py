@@ -22,7 +22,7 @@ def load_token_dict(token_dict_path):
 
 def indices_to_latex(indices, token_dict):
     id_to_token = {v: k for k, v in token_dict.items()}
-    tokens = [id_to_token.get(idx, "<UNK>") for idx in indices if id_to_token.get(idx) not in {"<SOS>", "<EOS>","PAD"}]
+    tokens = [id_to_token.get(idx, "<UNK>") for idx in indices if id_to_token.get(idx) not in {"<SOS>", "<EOS>","<PAD>"}]
     return tokens
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
@@ -90,7 +90,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
 
         total_loss += loss.item()
 
-        if (step + 1) % 500 == 0:
+        if (step + 1) % 2500 == 0:
             pred_tokens = torch.argmax(logits, dim=-1)  # (B, T)
 
             gen_sequence = indices_to_latex(pred_tokens[0,:].tolist(),token_dict=TOKEN_DICT)
