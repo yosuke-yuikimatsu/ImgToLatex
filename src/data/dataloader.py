@@ -7,6 +7,7 @@ import math
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import json
 
 
 def load_labels(label_path):
@@ -14,19 +15,24 @@ def load_labels(label_path):
         return [line.strip() for line in file]
 
 
-class DataGen(Dataset):
-    GO = 1
-    EOS = 2
+def load_token_dict(token_dict_path):
+    with open(token_dict_path, 'r', encoding='utf-8') as file:
+        return json.load(file)["token_to_id"]
 
-    def __init__(self, data_base_dir, data_path, label_path, max_aspect_ratio=4.0, max_decoder_l=20,
-                 img_width_range=(12, 320)):
+
+class DataGen(Dataset):
+    def __init__(self, data_base_dir, data_path, label_path, token_dict_path,
+                 max_aspect_ratio=4.0, max_decoder_l=20, img_width_range=(12, 320)):
         self.data_base_dir = Path(data_base_dir)
         self.max_aspect_ratio = max_aspect_ratio
         self.max_decoder_l = max_decoder_l
         self.img_width_range = img_width_range
         self.labels = load_labels(label_path)
+        self.token_to_id = load_token_dict(token_dict_path)
+
         with open(data_path, 'r', encoding='utf-8') as file:
             self.samples = [line.strip().split() for line in file.readlines()]
+
         self.bucket_specs = [
             (int(64 / 4), 9 + 2),
             (int(108 / 4), 15 + 2),
@@ -36,6 +42,11 @@ class DataGen(Dataset):
         ]
         self.bucket_min_width, self.bucket_max_width = img_width_range
         self.bucket_data = {i: [] for i in range(self.bucket_max_width + 1)}
+
+        self.PAD = self.token_to_id.get("<PAD>",0)
+        self.GO = self.token_to_id.get("<SOS>", 1)
+        self.EOS = self.token_to_id.get("<EOS>", 2)
+        self.UNK = self.token_to_id.get("<UNK>", 691)
 
         self.transform = transforms.Compose([
             transforms.ToTensor(),
@@ -48,19 +59,24 @@ class DataGen(Dataset):
     def __getitem__(self, idx):
         img_path, label_index = self.samples[idx]
         img = Image.open(self.data_base_dir / img_path)
-        label = self.labels[int(label_index)]
+        # Разбиваем метку по пробелам
+        label = self.labels[int(label_index)].split()
         label_tensor = torch.tensor(self._label_to_numeric(label), dtype=torch.long)
 
         width = img.size[0]
-
         bucket_idx = min(width, self.bucket_max_width)
         self.bucket_data[bucket_idx].append((img, label_tensor, img_path))
 
         return img, label_tensor, img_path
 
-    def _label_to_numeric(self, label):
-        label_indices = [self.GO] + [ord(c) for c in label] + [self.EOS]
-        return label_indices[:self.max_decoder_l] # усекаем длинные метки
+    def _label_to_numeric(self, label_tokens):
+        label_indices = [self.GO] + [self.token_to_id.get(token, self.UNK) for token in label_tokens] + [self.EOS]
+        return label_indices[:self.max_decoder_l]
+
+    def indices_to_latex(self, indices):
+        id_to_token = {v: k for k, v in self.token_to_id.items()}
+        tokens = [id_to_token.get(idx, "<UNK>") for idx in indices if idx not in {self.GO, self.EOS,self.PAD}]
+        return ' '.join(tokens)
 
     def get_buckets(self, batch_size):
         for bucket_idx, bucket in self.bucket_data.items():
@@ -81,7 +97,8 @@ class DataGen(Dataset):
 
 def find_empty_columns(img_array, threshold=40):
     column_sums = np.sum(img_array, axis=(0, 2)) if len(img_array.shape) == 3 else np.sum(img_array, axis=0)
-    empty_columns = np.where(column_sums < threshold)[0] # выбираем столбцы, векторная 1-норма которых достаточно близка к нулю
+    empty_columns = np.where(column_sums < threshold)[
+        0]  # выбираем столбцы, векторная 1-норма которых достаточно близка к нулю
     return len(empty_columns)
 
 
@@ -90,11 +107,12 @@ def cyclic_shift_image(img):
     empty_columns = find_empty_columns(img_array)
 
     if empty_columns > 0:
-        shift = np.random.randint(empty_columns // 2, empty_columns + 1) # сдвигаем по околонулевым столбцам
+        shift = np.random.randint(empty_columns // 2, empty_columns + 1)  # сдвигаем по околонулевым столбцам
         shifted_img_array = np.roll(img_array, shift, axis=1)
         return Image.fromarray(shifted_img_array)
     else:
         return img
+
 
 def apply_random_transform(img):
     transform_list = [
@@ -108,7 +126,6 @@ def apply_random_transform(img):
     ]
     transform = random.choice(transform_list)
     return transform(img)
-
 
 
 def adjust_color_balance(img):
@@ -189,6 +206,21 @@ def pad_and_transform(image, target_width, target_height):
 #     for images, targets, img_paths in dataloader:
 #         print("Batch loaded with image paths and annotations:")
 #         for img_path, target in zip(img_paths, targets):
-#             annotation = ''.join([chr(idx) if idx > 2 else '' for idx in target.tolist()])
-#             print(f"Image path: {img_path}, Annotation: {annotation}")
-#         break
+#             annotation = ''.join([chr(idx) if idx > 2 else '' for idx in target.tolist()])\n            print(f\"Image path: {img_path}, Annotation: {annotation}\")\n         break
+
+
+""" if __name__ == "__main__":
+    token_dict_path = "/Users/semencinman/Downloads/latex_vocab.json"
+    data_base_dir = "/Users/semencinman/Documents/GitHub/ImgToLatex/samples/images/formula_images_processed"
+    data_path = "/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_train_filter.lst"
+    label_path = "/Users/semencinman/Documents/GitHub/ImgToLatex/samples/im2latex_formulas.tok.lst"
+
+    # токены разделены пробелом
+    test_label = "\\int _ { 0 } ^ { \\infty } e ^ { - x ^ 2 } d x".split()
+
+    datagen = DataGen(data_base_dir, data_path, label_path, token_dict_path)
+    numeric_representation = datagen._label_to_numeric(test_label)
+    print("Numeric Representation:", numeric_representation)
+
+    latex_representation = datagen.indices_to_latex(numeric_representation)
+    print("Reconstructed LaTeX:", latex_representation) """

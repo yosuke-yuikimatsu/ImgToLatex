@@ -13,22 +13,35 @@ from metrics.bleu_score import compute_bleu
 
 from torch.amp import autocast, GradScaler
 
-def indices_to_latex(sequence):
-    annotation = [chr(idx) if idx > 2 else '' for idx in sequence]
-    return annotation
+
+import json
+
+def load_token_dict(token_dict_path):
+    with open(token_dict_path, 'r', encoding='utf-8') as file:
+        return json.load(file)["token_to_id"]
+
+def indices_to_latex(indices, token_dict):
+    id_to_token = {v: k for k, v in token_dict.items()}
+    tokens = [id_to_token.get(idx, "<UNK>") for idx in indices if id_to_token.get(idx) not in {"<SOS>", "<EOS>","PAD"}]
+    return tokens
 
 # ------------------------- ПАРАМЕТРЫ --------------------------------- #
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Пути к данным
 SAMPLES_DIR = Path.cwd() / ".." / "samples"
-DATA_BASE_DIR = SAMPLES_DIR / "images" / "formula_images_processed"
-TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_train_filter.lst"
-TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
-VAL_DATA_PATH = SAMPLES_DIR / "im2latex_validate_filter.lst"
-VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
-TEST_DATA_PATH = SAMPLES_DIR / "im2latex_test_filter.lst"
-TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_formulas.tok.lst"
+DATA_BASE_DIR = SAMPLES_DIR / "images"
+TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_new_train_filter.lst"
+TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_new_formulas.tok.lst"
+VAL_DATA_PATH = SAMPLES_DIR / "im2latex_new_validate_filter.lst"
+VAL_LABEL_PATH = SAMPLES_DIR / "im2latex_new_formulas.tok.lst"
+TEST_DATA_PATH = SAMPLES_DIR / "im2latex_new_test_filter.lst"
+TEST_LABEL_PATH = SAMPLES_DIR / "im2latex_new_formulas.tok.lst"
+DICT_PATH = SAMPLES_DIR / "vocab.json"
+
+#Load token dict
+TOKEN_DICT = load_token_dict(DICT_PATH)
+
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
 PARAMS_DIR = Path("/content/drive/MyDrive/params_new_model")
@@ -38,17 +51,18 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 8
+BATCH_SIZE = 2
 NUM_EPOCHS = 100
-LEARNING_RATE = 3e-5
+LEARNING_RATE = 5e-5
 BEAM_WIDTH = 5
+WARMUP_STEPS = 1000
 
 # Размер словаря и специальные токены (обновлены для соответствия вашей модели)
-VOCAB_SIZE = 131
+VOCAB_SIZE = 692
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 70
+MAX_LENGTH = 40
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
@@ -59,7 +73,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
         images = images.to(DEVICE, non_blocking=True)
         targets = targets.to(DEVICE, non_blocking=True)
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
         with autocast(device_type=str(DEVICE)):
             # В режиме обучения передаём targets, получаем только логиты
@@ -76,10 +90,10 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
 
         total_loss += loss.item()
 
-        if (step + 1) % 500 == 0:
+        if (step + 1) % 1 == 0:
             pred_tokens = torch.argmax(logits, dim=-1)  # (B, T)
 
-            gen_sequence = indices_to_latex(pred_tokens[0,:].tolist())
+            gen_sequence = indices_to_latex(pred_tokens[0,:].tolist(),token_dict=TOKEN_DICT)
             print("Generated sequence:", gen_sequence)
             print(f"[Epoch {epoch}] Step [{step + 1}/{len(dataloader)}], Loss: {loss.item():.8f}")
 
@@ -110,8 +124,8 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
             # generated_tokens — это список переменной длины, каждый элемент — тензор
 
             for i in range(len(images)):
-                ref_tokens = indices_to_latex(targets[i, 1:].tolist())  # Удаляем SOS из целевой последовательности
-                cand_tokens = indices_to_latex(generated_tokens[i][1:].tolist())  # Предсказанные токены уже обрезаны по EOS
+                ref_tokens = indices_to_latex(targets[i, 1:].tolist(),token_dict=TOKEN_DICT)  # Удаляем SOS из целевой последовательности
+                cand_tokens = indices_to_latex(generated_tokens[i][1:].tolist(),token_dict=TOKEN_DICT)  # Предсказанные токены уже обрезаны по EOS
 
                 if compute_bleu_metric:
                     bleu_score = compute_bleu(cand_tokens, [ref_tokens])
@@ -119,8 +133,8 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
                 else:
                     print("BLEU вычисление отключено.")
                     bleu_score = None
-                cand_str = ''.join(cand_tokens)
-                ref_str = ''.join(ref_tokens)
+                ref_str = ' '.join(ref_tokens)
+                cand_str = ' '.join(cand_tokens)
                 #cand_str_fixed = fix(cand_str)
                 print(f"=== Sample {i + 1} ===")
                 print(f"  Path : {img_paths[i]}")
@@ -149,7 +163,9 @@ def main():
         data_base_dir=DATA_BASE_DIR,
         data_path=TRAIN_DATA_PATH,
         label_path=TRAIN_LABEL_PATH,
-        max_decoder_l=MAX_LENGTH
+        max_decoder_l=MAX_LENGTH,
+        img_width_range=(300,400),
+        token_dict_path=DICT_PATH
     )
     train_loader = DataLoader(
         train_dataset,
@@ -164,7 +180,9 @@ def main():
         data_base_dir=DATA_BASE_DIR,
         data_path=VAL_DATA_PATH,
         label_path=VAL_LABEL_PATH,
-        max_decoder_l=MAX_LENGTH
+        max_decoder_l=MAX_LENGTH,
+        img_width_range=(300,400),
+        token_dict_path=DICT_PATH
     )
     val_loader = DataLoader(
         val_dataset,
@@ -179,7 +197,9 @@ def main():
         data_base_dir=DATA_BASE_DIR,
         data_path=TEST_DATA_PATH,
         label_path=TEST_LABEL_PATH,
-        max_decoder_l=MAX_LENGTH
+        max_decoder_l=MAX_LENGTH,
+        img_width_range=(300,400),
+        token_dict_path=DICT_PATH
     )
 
     test_loader = DataLoader(
@@ -200,20 +220,41 @@ def main():
         sos_index=SOS_IDX,
         eos_index=EOS_IDX,
         max_length=MAX_LENGTH,
-        beam_width = BEAM_WIDTH
+        beam_width = BEAM_WIDTH,
+        training=False
     ).to(DEVICE)
 
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs!")
         model = nn.DataParallel(model).to(DEVICE)
 
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-    criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+            {
+                "params": [p for n, p in model.named_parameters() 
+                          if not any(nd in n for nd in no_decay)],
+                "weight_decay": 0.01,
+            },
+            {
+                "params": [p for n, p in model.named_parameters() 
+                          if any(nd in n for nd in no_decay)],
+                "weight_decay": 0.0,
+            },
+        ]
+        
+        # Create optimizer
+    optimizer = optim.AdamW(
+            optimizer_grouped_parameters,
+            lr=LEARNING_RATE,
+            betas=(0.9, 0.999),
+            eps=1e-8
+        )
+        
+    criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX,label_smoothing=0.1)
     scaler = GradScaler(device=str(DEVICE))
 
-    """ total_params = sum(p.numel() for p in model.parameters())
+    total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params}")
-    """
     # Учительское принуждение не используется в трансформерной модели
     # START_TEACHER_FORCING и END_TEACHER_FORCING убраны
 
