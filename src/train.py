@@ -90,7 +90,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
 
         total_loss += loss.item()
 
-        if (step + 1) % 1 == 0:
+        if (step + 1) % 500 == 0:
             pred_tokens = torch.argmax(logits, dim=-1)  # (B, T)
 
             gen_sequence = indices_to_latex(pred_tokens[0,:].tolist(),token_dict=TOKEN_DICT)
