@@ -51,7 +51,7 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 2
+BATCH_SIZE = 16
 NUM_EPOCHS = 100
 LEARNING_RATE = 5e-5
 BEAM_WIDTH = 5
@@ -221,7 +221,7 @@ def main():
         eos_index=EOS_IDX,
         max_length=MAX_LENGTH,
         beam_width = BEAM_WIDTH,
-        training=False
+        training=True
     ).to(DEVICE)
 
     if torch.cuda.device_count() > 1:
