@@ -44,7 +44,7 @@ TOKEN_DICT = load_token_dict(DICT_PATH)
 
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/content/drive/MyDrive/params_new_model")
+PARAMS_DIR = Path("/content/drive/MyDrive/parameters")
 os.makedirs(PARAMS_DIR, exist_ok=True)
 
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
