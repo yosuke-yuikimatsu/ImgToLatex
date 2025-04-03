@@ -51,7 +51,7 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 NUM_EPOCHS = 100
 LEARNING_RATE = 5e-5
 BEAM_WIDTH = 5
