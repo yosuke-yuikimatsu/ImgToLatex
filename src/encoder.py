@@ -4,7 +4,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import torch.nn.functional as F
 
 class OptimizedPositionalEncoding2D(nn.Module):
-    def __init__(self, d_model, height=324, width=324, dropout=0.1):
+    def __init__(self, d_model, height=224, width=224, dropout=0.1):
         super().__init__()
         # Use parameter buffers instead of Embedding layers for better efficiency
         pos_height = torch.arange(height).unsqueeze(1).expand(height, width).float()
@@ -32,7 +32,7 @@ class OptimizedPositionalEncoding2D(nn.Module):
 
 class TransformerEncoderModule(nn.Module):
     def __init__(self, enc_hid_dim=1536, num_heads=12, num_layers=6, ffn_dim=3072, 
-                 height=324, width=324, dropout=0.1, activation="gelu",training=True):
+                 height=224, width=224, dropout=0.1, activation="gelu",training=True):
         super().__init__()
         self.enc_hid_dim = enc_hid_dim
         self.trainining = training
@@ -73,7 +73,7 @@ class TransformerEncoderModule(nn.Module):
         # Use gradient checkpointing if enabled
         if self.use_checkpoint and self.training:
             x_enc = torch.utils.checkpoint.checkpoint(
-                self.transformer_encoder, x_flat,use_reentrant=False
+                self.transformer_encoder, x_flat,use_reentrant=True
             )
         else:
             x_enc = self.transformer_encoder(x_flat)

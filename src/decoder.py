@@ -76,7 +76,7 @@ class TransformerDecoderModule(nn.Module):
             # Use gradient checkpointing if training
             if self.training:
                 output = torch.utils.checkpoint.checkpoint(
-                    self.transformer_decoder, tgt_emb, memory, tgt_mask,use_reentrant=False
+                    self.transformer_decoder, tgt_emb, memory, tgt_mask,use_reentrant=True
                 )
             else:
                 output = self.transformer_decoder(tgt_emb, memory, tgt_mask=tgt_mask)
