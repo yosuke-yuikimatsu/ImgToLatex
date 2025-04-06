@@ -75,4 +75,4 @@ class ImageToLatexModel(nn.Module):
             features = self.cnn(images)
             memory = self.encoder(features)
             _, predicted_tokens = self.decoder(None, memory, self.beam_width)
-            return predicted_tokens
+            return None , predicted_tokens

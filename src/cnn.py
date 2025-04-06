@@ -7,8 +7,9 @@ class CNN(nn.Module):
         
         self.convnext = timm.create_model('convnext_large.fb_in22k', pretrained=True, num_classes=0)
         
-        self.conv_reduction = nn.Conv2d(1536, output_channels, kernel_size=1)
         self.output_channels = output_channels
+        
+        self.conv_reduction = nn.Conv2d(1536, self.output_channels, kernel_size=1)
         
         # Add batch normalization for more stable training
         self.batch_norm = nn.BatchNorm2d(output_channels)

@@ -30,7 +30,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Пути к данным
 SAMPLES_DIR = Path.cwd() / ".." / "samples"
-DATA_BASE_DIR = SAMPLES_DIR / "images"
+DATA_BASE_DIR = SAMPLES_DIR / "part1"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_new_train_filter.lst"
 TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_new_formulas.tok.lst"
 VAL_DATA_PATH = SAMPLES_DIR / "im2latex_new_validate_filter.lst"
@@ -51,7 +51,7 @@ MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 
 # Гиперпараметры
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 NUM_EPOCHS = 100
 LEARNING_RATE = 5e-5
 BEAM_WIDTH = 5
@@ -109,46 +109,43 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
     all_bleu = []
     batches_processed = 0
 
-    with torch.no_grad():
-        for images, targets, img_paths in dataloader:
-            images = images.to(DEVICE)
-            targets = targets.to(DEVICE)
+    for images, targets, img_paths in dataloader:
+        images = images.to(DEVICE)
+        targets = targets.to(DEVICE)
 
-            with autocast(dtype=torch.bfloat16 if DEVICE.type == 'cuda' else torch.float32,
-                          device_type=str(DEVICE)):
-                # В режиме инференса получаем логиты и токены
-                logits, generated_tokens = model(images, tgt_tokens=None)
+        
+        logits, generated_tokens = model.generate(images)
 
             # Переносим на CPU для вычислений
-            targets = targets.cpu()
+        targets = targets.cpu()
             # generated_tokens — это список переменной длины, каждый элемент — тензор
 
-            for i in range(len(images)):
-                ref_tokens = indices_to_latex(targets[i, 1:].tolist(),token_dict=TOKEN_DICT)  # Удаляем SOS из целевой последовательности
-                cand_tokens = indices_to_latex(generated_tokens[i][1:].tolist(),token_dict=TOKEN_DICT)  # Предсказанные токены уже обрезаны по EOS
+        for i in range(len(images)):
+            ref_tokens = indices_to_latex(targets[i].tolist(),token_dict=TOKEN_DICT)
+            cand_tokens = indices_to_latex(generated_tokens[i].tolist(),token_dict=TOKEN_DICT)
 
-                if compute_bleu_metric:
-                    bleu_score = compute_bleu(cand_tokens, [ref_tokens])
-                    all_bleu.append(bleu_score)
-                else:
-                    print("BLEU вычисление отключено.")
-                    bleu_score = None
-                ref_str = ' '.join(ref_tokens)
-                cand_str = ' '.join(cand_tokens)
+            if compute_bleu_metric:
+                bleu_score = compute_bleu(cand_tokens, [ref_tokens])
+                all_bleu.append(bleu_score)
+            else:
+                print("BLEU вычисление отключено.")
+                bleu_score = None
+            ref_str = ' '.join(ref_tokens)
+            cand_str = ' '.join(cand_tokens)
                 #cand_str_fixed = fix(cand_str)
-                print(f"=== Sample {i + 1} ===")
-                print(f"  Path : {img_paths[i]}")
-                print(f"  Real : {ref_str}")
-                print(f"  Pred : {cand_str}")
+            print(f"=== Sample {i + 1} ===")
+            print(f"  Path : {img_paths[i]}")
+            print(f"  Real : {ref_str}")
+            print(f"  Pred : {cand_str}")
                 #print(f"  Fixed Pred : {cand_str_fixed}")
-                print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
+            print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
 
-            del images, targets, logits, generated_tokens
-            torch.cuda.empty_cache()
+        del images, targets, logits, generated_tokens
+        torch.cuda.empty_cache()
 
-            batches_processed += 1
-            if batches_processed >= num_batches:
-                break
+        batches_processed += 1
+        if batches_processed >= num_batches:
+            break
 
     if compute_bleu_metric and all_bleu:
         avg_bleu = sum(all_bleu) / len(all_bleu)
@@ -164,7 +161,6 @@ def main():
         data_path=TRAIN_DATA_PATH,
         label_path=TRAIN_LABEL_PATH,
         max_decoder_l=MAX_LENGTH,
-        img_width_range=(300,400),
         token_dict_path=DICT_PATH
     )
     train_loader = DataLoader(
@@ -181,7 +177,6 @@ def main():
         data_path=VAL_DATA_PATH,
         label_path=VAL_LABEL_PATH,
         max_decoder_l=MAX_LENGTH,
-        img_width_range=(300,400),
         token_dict_path=DICT_PATH
     )
     val_loader = DataLoader(
@@ -198,7 +193,6 @@ def main():
         data_path=TEST_DATA_PATH,
         label_path=TEST_LABEL_PATH,
         max_decoder_l=MAX_LENGTH,
-        img_width_range=(300,400),
         token_dict_path=DICT_PATH
     )
 
@@ -278,7 +272,7 @@ def main():
     model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    #predict(model, val_loader, num_batches=2, compute_bleu_metric=True)
+    #predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
