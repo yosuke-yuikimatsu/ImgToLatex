@@ -130,15 +130,16 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
             else:
                 print("BLEU вычисление отключено.")
                 bleu_score = None
-            ref_str = ' '.join(ref_tokens)
-            cand_str = ' '.join(cand_tokens)
-                #cand_str_fixed = fix(cand_str)
-            print(f"=== Sample {i + 1} ===")
-            print(f"  Path : {img_paths[i]}")
-            print(f"  Real : {ref_str}")
-            print(f"  Pred : {cand_str}")
-                #print(f"  Fixed Pred : {cand_str_fixed}")
-            print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
+            if i == BATCH_SIZE - 1:
+                ref_str = ' '.join(ref_tokens)
+                cand_str = ' '.join(cand_tokens)
+                    #cand_str_fixed = fix(cand_str)
+                print(f"=== Sample {i + 1} ===")
+                print(f"  Path : {img_paths[i]}")
+                print(f"  Real : {ref_str}")
+                print(f"  Pred : {cand_str}")
+                    #print(f"  Fixed Pred : {cand_str_fixed}")
+                print(f"BLEU : {bleu_score:.2f}" if bleu_score is not None else "BLEU: N/A")
 
         del images, targets, logits, generated_tokens
         torch.cuda.empty_cache()
@@ -272,7 +273,7 @@ def main():
     model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    #predict(model, val_loader, num_batches=1, compute_bleu_metric=False)
+    predict(model, test_loader, num_batches=100, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
