@@ -276,7 +276,7 @@ def main():
     model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    predict(model, test_loader, num_batches=2000, compute_bleu_metric=True)
+    #predict(model, test_loader, num_batches=2000, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
@@ -291,7 +291,7 @@ def main():
 
         print(f"Epoch {epoch} done. Avg Loss: {avg_loss:.8f}")
         print("--- Пример инференса (1 батч) ---")
-        predict(model, val_loader, num_batches=2, compute_bleu_metric=True)
+        predict(model, val_loader, num_batches=10, compute_bleu_metric=True)
 
         checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
         torch.save(model.state_dict(), checkpoint_path)
