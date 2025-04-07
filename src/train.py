@@ -54,7 +54,7 @@ os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
 # Гиперпараметры
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
-LEARNING_RATE = 5e-5
+LEARNING_RATE = 1e-4
 BEAM_WIDTH = 5
 WARMUP_STEPS = 1000
 
