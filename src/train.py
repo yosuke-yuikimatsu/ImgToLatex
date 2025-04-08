@@ -46,7 +46,7 @@ TOKEN_DICT = load_token_dict(DICT_PATH)
 
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/kaggle/input/Model-params")
+PARAMS_DIR = Path("/kaggle/input/model-params")
 CHECKPOINTS_DIR = Path("/kaggle/working/checkpoints")
 os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
 
