@@ -276,7 +276,7 @@ def main():
     model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    predict(model, test_loader, num_batches=2000, compute_bleu_metric=True)
+    #predict(model, test_loader, num_batches=2000, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
