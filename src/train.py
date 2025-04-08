@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+from prompt_toolkit.widgets import Checkbox
 
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -30,7 +31,7 @@ def indices_to_latex(indices, token_dict):
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Пути к данным
-SAMPLES_DIR = Path.cwd() / ".." / "samples"
+SAMPLES_DIR = Path("/kaggle/working/samples/ImgToLatex-Kaggle-Learning/samples")
 DATA_BASE_DIR = SAMPLES_DIR / "part1"
 TRAIN_DATA_PATH = SAMPLES_DIR / "im2latex_new_train_filter.lst"
 TRAIN_LABEL_PATH = SAMPLES_DIR / "im2latex_new_formulas.tok.lst"
@@ -45,8 +46,9 @@ TOKEN_DICT = load_token_dict(DICT_PATH)
 
 
 # ---------------- ПУТЬ ДЛЯ СОХРАНЕНИЯ МОДЕЛИ ------------------------- #
-PARAMS_DIR = Path("/content/drive/MyDrive/parameters")
-os.makedirs(PARAMS_DIR, exist_ok=True)
+PARAMS_DIR = Path("/kaggle/input/Model-params")
+CHECKPOINTS_DIR = Path("/kaggle/working/checkpoints")
+os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
 
 MODEL_SAVE_PATH = Path.cwd() / "models" / "image_to_latex_model.pth"
 os.makedirs(MODEL_SAVE_PATH.parent, exist_ok=True)
@@ -293,7 +295,7 @@ def main():
         print("--- Пример инференса (1 батч) ---")
         predict(model, val_loader, num_batches=10, compute_bleu_metric=True)
 
-        checkpoint_path = PARAMS_DIR / f"model_epoch_{epoch}.pth"
+        checkpoint_path = CHECKPOINTS_DIR / f"model_epoch_{epoch}.pth"
         torch.save(model.state_dict(), checkpoint_path)
         print(f"Чекпоинт сохранён: {checkpoint_path}")
 
