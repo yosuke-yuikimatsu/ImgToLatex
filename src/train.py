@@ -63,7 +63,7 @@ VOCAB_SIZE = 692
 PAD_IDX = 0
 SOS_IDX = 1
 EOS_IDX = 2
-MAX_LENGTH = 40
+MAX_LENGTH = 60
 
 # ---------------------- ОБУЧЕНИЕ ОДНОЙ ЭПОХИ ----------------- #
 def train_one_epoch(model, dataloader, criterion, optimizer, scaler, epoch):
@@ -266,7 +266,16 @@ def main():
         latest_checkpoint = checkpoint_files[-1]
         latest_epoch = extract_epoch(latest_checkpoint)
         print(f"Найден чекпоинт {latest_checkpoint}, возобновляем обучение с эпохи {latest_epoch + 1}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE,weights_only=True))
+        # Небольшой апдейт для модели новой длины
+        state_dict = torch.load(latest_checkpoint, map_location=DEVICE,weights_only=True)
+        model_dict = model.state_dict()
+        pretrained_pe = state_dict['decoder.pos_encoding']  # имеет размер (40, embed_dim)
+        new_pe = model_dict['decoder.pos_encoding']       # имеет размер (60, embed_dim)
+        new_pe[:40, :] = pretrained_pe
+        model_dict['decoder.pos_encoding'] = new_pe
+        pretrained_state = {k: v for k, v in state_dict.items() if k in model_dict and k != 'decoder.pos_encoding'}
+        model_dict.update(pretrained_state)
+        model.load_state_dict(model_dict, strict=False)
         start_epoch = latest_epoch + 1
     else:
         print("Чекпоинты не найдены, начинаем обучение с нуля.")
