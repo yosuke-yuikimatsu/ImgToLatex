@@ -160,7 +160,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
 # -------------------- MAIN --------------------- #
 def main():
-    num_of_inference_batches = sys.argv[1]
+    num_of_inference_batches = int(sys.argv[1])
     # Создаём датасеты
     train_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
