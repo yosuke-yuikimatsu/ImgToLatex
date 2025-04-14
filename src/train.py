@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -159,6 +160,7 @@ def predict(model, dataloader, num_batches=1, compute_bleu_metric=True):
 
 # -------------------- MAIN --------------------- #
 def main():
+    num_of_inference_batches = sys.argv[1]
     # Создаём датасеты
     train_dataset = DataGen(
         data_base_dir=DATA_BASE_DIR,
@@ -276,7 +278,8 @@ def main():
     model.load_state_dict(torch.load("models/model_epoch_80.pth", map_location=DEVICE, weights_only=True)) """
 
     # Обучение
-    #predict(model, test_loader, num_batches=2000, compute_bleu_metric=True)
+    if num_of_inference_batches > 0 : 
+        predict(model, test_loader, num_batches=num_of_inference_batches, compute_bleu_metric=True)
     for epoch in range(start_epoch, NUM_EPOCHS + 1):
         print(f"\n=== EPOCH {epoch}/{NUM_EPOCHS} ===")
 
